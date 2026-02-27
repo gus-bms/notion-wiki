@@ -138,6 +138,19 @@ export class QdrantClient {
     });
   }
 
+  async deletePoints(pointIds: Array<string | number>): Promise<void> {
+    if (pointIds.length === 0) {
+      return;
+    }
+
+    await this.request(`/collections/${this.collection}/points/delete`, {
+      method: "POST",
+      body: {
+        points: pointIds
+      }
+    });
+  }
+
   private async request<T = unknown>(
     path: string,
     options: { method: "PUT" | "POST" | "GET"; body?: unknown }

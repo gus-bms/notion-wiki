@@ -457,6 +457,30 @@ export class IngestWorkerService implements OnModuleInit, OnModuleDestroy {
 
       if (currentChunkIds.length > 0) {
         stage = "chunk_cleanup";
+        const staleChunks = await prisma.documentChunk.findMany({
+          where: {
+            documentId: document.id,
+            chunkId: { notIn: currentChunkIds }
+          },
+          select: {
+            embeddingRef: {
+              select: {
+                qdrantPointId: true
+              }
+            }
+          }
+        });
+
+        const stalePointIds = staleChunks
+          .map((chunk) => chunk.embeddingRef?.qdrantPointId)
+          .filter((pointId): pointId is string => Boolean(pointId));
+
+        if (stalePointIds.length > 0) {
+          stage = "vector_cleanup";
+          await this.qdrant.deletePoints(stalePointIds);
+        }
+
+        stage = "chunk_cleanup";
         await prisma.documentChunk.deleteMany({
           where: {
             documentId: document.id,
