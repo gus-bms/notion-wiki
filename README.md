@@ -45,6 +45,9 @@ If web-to-api requests are blocked by CORS, set `.env`:
 Web client auth header is now injected from env:
 `VITE_APP_TOKEN` (fallback: `APP_TOKEN`)
 
+Secret encryption key is configured with:
+`ENCRYPTION_KEY` (do not reuse `APP_TOKEN`)
+
 Worker health endpoints:
 - `GET http://localhost:3001/health`
 - `GET http://localhost:3001/queue/ping`

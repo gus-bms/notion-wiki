@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { timingSafeEqual } from "crypto";
 import { IS_PUBLIC_KEY } from "./public.decorator";
 
 @Injectable()
@@ -19,7 +20,16 @@ export class AppTokenGuard implements CanActivate {
     const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
     const expected = process.env.APP_TOKEN ?? "";
 
-    if (!token || token !== expected) {
+    if (!token || !expected) {
+      throw new UnauthorizedException("Invalid or missing APP token");
+    }
+
+    const tokenBuffer = Buffer.from(token, "utf8");
+    const expectedBuffer = Buffer.from(expected, "utf8");
+    const isMatch =
+      tokenBuffer.length === expectedBuffer.length && timingSafeEqual(tokenBuffer, expectedBuffer);
+
+    if (!isMatch) {
       throw new UnauthorizedException("Invalid or missing APP token");
     }
 
