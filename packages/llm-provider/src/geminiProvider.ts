@@ -40,23 +40,23 @@ export class GeminiProvider implements LlmProvider {
 
     const response = await withProviderRetry(
       async () => {
-        const fetchResponse = await fetch(
-          `${this.baseUrl}/models/${request.model}:batchEmbedContents?key=${encodeURIComponent(this.apiKey)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              requests: request.texts.map((text) => ({
-                model: `models/${request.model}`,
-                taskType: request.taskType ?? "RETRIEVAL_DOCUMENT",
-                content: {
-                  parts: [{ text }]
-                }
-              }))
-            }),
-            signal: AbortSignal.timeout(request.timeoutMs ?? 10_000)
-          }
-        );
+        const fetchResponse = await fetch(`${this.baseUrl}/models/${request.model}:batchEmbedContents`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": this.apiKey
+          },
+          body: JSON.stringify({
+            requests: request.texts.map((text) => ({
+              model: `models/${request.model}`,
+              taskType: request.taskType ?? "RETRIEVAL_DOCUMENT",
+              content: {
+                parts: [{ text }]
+              }
+            }))
+          }),
+          signal: AbortSignal.timeout(request.timeoutMs ?? 10_000)
+        });
 
         if (!fetchResponse.ok) {
           throw await this.mapError(fetchResponse);
@@ -88,7 +88,7 @@ export class GeminiProvider implements LlmProvider {
 
     const response = await withProviderRetry(
       async () => {
-        const endpoint = `${this.baseUrl}/models/${request.model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+        const endpoint = `${this.baseUrl}/models/${request.model}:generateContent`;
         let includeSystemInstruction = true;
         let outputFormat: ChatRequest["outputFormat"] = request.outputFormat;
 
@@ -145,7 +145,7 @@ export class GeminiProvider implements LlmProvider {
 
   private async mapError(response: Response): Promise<ProviderError> {
     const bodyText = await response.text();
-    const requestId = response.headers.get("x-request-id") ?? undefined;
+    const requestId = response.headers.get("x-request-id") ?? response.headers.get("x-goog-request-id") ?? undefined;
     const status = response.status;
 
     if (status === 401 || status === 403) {
@@ -211,7 +211,10 @@ export class GeminiProvider implements LlmProvider {
 
     return fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": this.apiKey
+      },
       body: JSON.stringify({
         ...(includeSystemInstruction
           ? {
