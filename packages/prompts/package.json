@@ -1,0 +1,17 @@
+{
+  "name": "@notion-wiki/prompts",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "lint": "echo \"No lint configured for @notion-wiki/prompts\"",
+    "test": "echo \"No tests for @notion-wiki/prompts\"",
+    "format": "echo \"No format task for @notion-wiki/prompts\""
+  },
+  "dependencies": {
+    "@notion-wiki/contracts": "*"
+  }
+}

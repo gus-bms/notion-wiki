@@ -1,0 +1,249 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceStatus {
+  active
+  inactive
+}
+
+enum TargetStatus {
+  active
+  inactive
+}
+
+enum DocumentStatus {
+  active
+  deleted
+}
+
+enum IngestMode {
+  full
+  incremental
+  webhook
+}
+
+enum IngestStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+enum IngestPageFailureStatus {
+  open
+  retry_queued
+  resolved
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model Source {
+  id                Int          @id @default(autoincrement())
+  name              String
+  provider          String       @default("notion")
+  notionTokenEnc    String
+  notionApiVersion  String
+  status            SourceStatus @default(active)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  syncTargets       SyncTarget[]
+  documents         Document[]
+  ingestJobs        IngestJob[]
+  pageFailures      IngestPageFailure[]
+  chatSessions      ChatSession[]
+
+  @@map("sources")
+  @@index([status], map: "idx_sources_status")
+}
+
+model SyncTarget {
+  id            Int          @id @default(autoincrement())
+  sourceId      Int
+  targetType    String
+  targetIdValue String
+  status        TargetStatus @default(active)
+  lastSyncAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  source        Source       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@map("sync_targets")
+  @@unique([sourceId, targetType, targetIdValue], map: "uniq_source_target")
+  @@index([sourceId, status], map: "idx_targets_source_status")
+}
+
+model Document {
+  id            Int            @id @default(autoincrement())
+  sourceId      Int
+  notionPageId  String
+  title         String
+  url           String
+  lastEditedAt  DateTime?
+  status        DocumentStatus @default(active)
+  rawText       String?        @db.LongText
+  rawTextHash   String?
+  indexedAt     DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  source        Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  chunks        DocumentChunk[]
+
+  @@map("documents")
+  @@unique([sourceId, notionPageId], map: "uniq_source_page")
+  @@index([sourceId, status, lastEditedAt], map: "idx_docs_source_status_lastedit")
+}
+
+model DocumentChunk {
+  id           Int          @id @default(autoincrement())
+  documentId   Int
+  chunkId      String
+  chunkIndex   Int
+  chunkText    String       @db.LongText
+  startOffset  Int?
+  endOffset    Int?
+  tokenCount   Int?
+  contentHash  String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  embeddingRef EmbeddingRef?
+
+  @@map("document_chunks")
+  @@unique([chunkId], map: "uniq_chunk_id")
+  @@unique([documentId, chunkIndex, contentHash], map: "uniq_doc_chunk")
+  @@index([documentId], map: "idx_chunks_doc")
+}
+
+model EmbeddingRef {
+  id           Int           @id @default(autoincrement())
+  chunkId      String        @unique(map: "uniq_embedding_chunk")
+  provider     String
+  model        String
+  vectorDim    Int
+  qdrantPointId String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  chunk        DocumentChunk @relation(fields: [chunkId], references: [chunkId], onDelete: Cascade)
+
+  @@map("embedding_refs")
+}
+
+model IngestJob {
+  id           Int         @id @default(autoincrement())
+  sourceId     Int
+  mode         IngestMode
+  status       IngestStatus @default(queued)
+  attempt      Int          @default(0)
+  requestedBy  String
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  errorCode    String?
+  errorMessage String?      @db.Text
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  source       Source       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  latestPageFailures IngestPageFailure[] @relation("IngestPageFailureLatestJob")
+  retryPageFailures  IngestPageFailure[] @relation("IngestPageFailureRetryJob")
+
+  @@map("ingest_jobs")
+  @@index([sourceId, status, id], map: "idx_jobs_source_status_created")
+}
+
+model IngestPageFailure {
+  id               Int                    @id @default(autoincrement())
+  sourceId         Int
+  notionPageId     String
+  status           IngestPageFailureStatus @default(open)
+  failureCount     Int                    @default(0)
+  latestIngestJobId Int
+  retryIngestJobId Int?
+  targetType       String?
+  targetIdValue    String?
+  failureStage     String                 @default("unknown")
+  errorCode        String?
+  errorMessage     String                 @db.Text
+  firstFailedAt    DateTime               @default(now())
+  lastFailedAt     DateTime               @default(now())
+  retryRequestedAt DateTime?
+  retryRequestedBy String?
+  resolvedAt       DateTime?
+  resolvedIngestJobId Int?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  source           Source                 @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  latestIngestJob  IngestJob              @relation("IngestPageFailureLatestJob", fields: [latestIngestJobId], references: [id], onDelete: Cascade)
+  retryIngestJob   IngestJob?             @relation("IngestPageFailureRetryJob", fields: [retryIngestJobId], references: [id], onDelete: SetNull)
+
+  @@map("ingest_page_failures")
+  @@unique([sourceId, notionPageId], map: "uniq_page_failure_source_page")
+  @@index([sourceId, status, lastFailedAt], map: "idx_page_failures_source_status")
+  @@index([notionPageId], map: "idx_page_failures_page")
+}
+
+model ChatSession {
+  id         Int           @id @default(autoincrement())
+  sourceId   Int
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  source     Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id            Int            @id @default(autoincrement())
+  sessionId     Int
+  role          MessageRole
+  messageText   String         @db.LongText
+  answerText    String?        @db.LongText
+  citationsJson Json?
+  metaJson      Json?
+  createdAt     DateTime       @default(now())
+  session       ChatSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  feedbacks     Feedback[]
+  retrievalLogs RetrievalLog[]
+
+  @@map("chat_messages")
+  @@index([sessionId, id], map: "idx_messages_session")
+}
+
+model Feedback {
+  id        Int         @id @default(autoincrement())
+  messageId Int
+  score     Int
+  reason    String
+  createdAt DateTime    @default(now())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("feedback")
+  @@index([messageId], map: "idx_feedback_message")
+}
+
+model RetrievalLog {
+  id               Int         @id @default(autoincrement())
+  messageId        Int
+  queryText        String      @db.LongText
+  topK             Int
+  chunkIdsJson     Json?
+  scoresJson       Json?
+  contextTokensEst Int?
+  retrievalMs      Int
+  llmMs            Int
+  cacheHit         Boolean     @default(false)
+  createdAt        DateTime    @default(now())
+  message          ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("retrieval_logs")
+  @@index([messageId], map: "idx_retrieval_message")
+  @@index([createdAt], map: "idx_retrieval_created")
+}

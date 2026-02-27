@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.turbo/
+.run/
+.DS_Store
+.env
+.env.local
+coverage/
+*.log
+apps/web/.vite/
+apps/web/dist/
+packages/db/prisma/migrations/

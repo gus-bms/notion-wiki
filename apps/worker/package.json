@@ -1,0 +1,36 @@
+{
+  "name": "@notion-wiki/worker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "dotenv -e ../../.env -- ts-node-dev --respawn --transpile-only src/main.ts",
+    "start": "node dist/main.js",
+    "lint": "echo \"No lint configured for @notion-wiki/worker\"",
+    "test": "echo \"No tests for @notion-wiki/worker\"",
+    "format": "echo \"No format task for @notion-wiki/worker\""
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.4",
+    "@nestjs/core": "^10.4.4",
+    "@nestjs/platform-express": "^10.4.4",
+    "@notion-wiki/contracts": "*",
+    "@notion-wiki/db": "*",
+    "@notion-wiki/llm-provider": "*",
+    "@notion-wiki/notion-client": "*",
+    "@notion-wiki/observability": "*",
+    "@notion-wiki/retrieval": "*",
+    "@notion-wiki/vector-store": "*",
+    "bullmq": "^5.23.0",
+    "ioredis": "^5.4.1",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.6.3"
+  }
+}

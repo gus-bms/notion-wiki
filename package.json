@@ -1,0 +1,31 @@
+{
+  "name": "notion-wiki",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Notion document findability tool with ingestion and RAG citations.",
+  "packageManager": "npm@10.7.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "node scripts/dev-start.mjs",
+    "dev:stop": "node scripts/dev-stop.mjs",
+    "e2e:chat": "dotenv -e .env -- node scripts/e2e-chat-citation.mjs",
+    "test:notion-client": "node scripts/test-notion-client.mjs",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "turbo run format",
+    "db:generate": "npm run --workspace @notion-wiki/db generate",
+    "db:migrate": "npm run --workspace @notion-wiki/db migrate"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.2",
+    "turbo": "^2.0.14",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
