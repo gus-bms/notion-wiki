@@ -97,6 +97,8 @@ export class QdrantClient {
     topK: number;
     sourceId: number;
     status?: "active" | "deleted";
+    dateFrom?: string;
+    dateTo?: string;
   }): Promise<
     Array<{
       id: string | number;
@@ -104,6 +106,18 @@ export class QdrantClient {
       payload: QdrantPointPayload;
     }>
   > {
+    const mustFilters: Array<Record<string, unknown>> = [
+      { key: "sourceId", match: { value: params.sourceId } },
+      { key: "status", match: { value: params.status ?? "active" } }
+    ];
+
+    if (params.dateFrom || params.dateTo) {
+      const range: Record<string, string> = {};
+      if (params.dateFrom) range.gte = params.dateFrom;
+      if (params.dateTo) range.lte = params.dateTo;
+      mustFilters.push({ key: "lastEditedAt", range });
+    }
+
     const response = await this.request<{
       result: Array<{ id: string | number; score: number; payload: QdrantPointPayload }>;
     }>(
@@ -114,12 +128,7 @@ export class QdrantClient {
           vector: params.vector,
           limit: params.topK,
           with_payload: true,
-          filter: {
-            must: [
-              { key: "sourceId", match: { value: params.sourceId } },
-              { key: "status", match: { value: params.status ?? "active" } }
-            ]
-          }
+          filter: { must: mustFilters }
         }
       }
     );

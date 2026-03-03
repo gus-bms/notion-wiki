@@ -79,6 +79,7 @@ export class ChatService {
 
     const lexicalCandidate = this.extractLexicalCandidate(parsed.message);
     const exactLookupRequested = lexicalCandidate !== null;
+    const temporalRange = this.detectTemporalRange(parsed.message) ?? undefined;
     let partialLexicalUsed = false;
 
     if (lexicalCandidate) {
@@ -90,7 +91,7 @@ export class ChatService {
     }
 
     if (!exactLookupRequested) {
-      const hybrid = await this.retrieveHybridResults(parsed.sourceId, parsed.message, topK);
+      const hybrid = await this.retrieveHybridResults(parsed.sourceId, parsed.message, topK, temporalRange);
       retrievalResults = hybrid.results;
       semanticCandidateCount = hybrid.semanticCount;
       lexicalCandidateCount = hybrid.lexicalCount;
@@ -120,10 +121,11 @@ export class ChatService {
     } else if (contexts.length > 0) {
       const llmStartedAt = Date.now();
       try {
+        const todayDate = new Date().toISOString().slice(0, 10);
         const rawResponse = await this.provider.chat({
           model: process.env.GEMINI_CHAT_MODEL ?? "gemini-2.5-flash",
           outputFormat: "json",
-          systemInstruction: DEFAULT_SYSTEM_PROMPT,
+          systemInstruction: `${DEFAULT_SYSTEM_PROMPT}\n\nToday's date: ${todayDate}`,
           userMessage: parsed.message,
           contexts
         });
@@ -234,6 +236,71 @@ export class ChatService {
     return null;
   }
 
+  private detectTemporalRange(message: string): { dateFrom: string; dateTo: string } | null {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const endOfDay = (d: Date): Date => {
+      const end = new Date(d);
+      end.setHours(23, 59, 59, 999);
+      return end;
+    };
+
+    if (/오늘/.test(message)) {
+      return { dateFrom: today.toISOString(), dateTo: endOfDay(today).toISOString() };
+    }
+
+    if (/어제/.test(message)) {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return { dateFrom: yesterday.toISOString(), dateTo: endOfDay(yesterday).toISOString() };
+    }
+
+    if (/이번\s*주/.test(message)) {
+      const startOfWeek = new Date(today);
+      const dayOfWeek = today.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      startOfWeek.setDate(today.getDate() - daysToMonday);
+      return { dateFrom: startOfWeek.toISOString(), dateTo: endOfDay(today).toISOString() };
+    }
+
+    if (/지난\s*주/.test(message)) {
+      const dayOfWeek = today.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const startOfThisWeek = new Date(today);
+      startOfThisWeek.setDate(today.getDate() - daysToMonday);
+      const startOfLastWeek = new Date(startOfThisWeek);
+      startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+      const endOfLastWeek = new Date(startOfThisWeek);
+      endOfLastWeek.setDate(startOfThisWeek.getDate() - 1);
+      return { dateFrom: startOfLastWeek.toISOString(), dateTo: endOfDay(endOfLastWeek).toISOString() };
+    }
+
+    if (/이번\s*달/.test(message)) {
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { dateFrom: startOfMonth.toISOString(), dateTo: endOfDay(today).toISOString() };
+    }
+
+    if (/지난\s*달/.test(message)) {
+      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      return { dateFrom: startOfLastMonth.toISOString(), dateTo: endOfDay(endOfLastMonth).toISOString() };
+    }
+
+    if (/올해/.test(message)) {
+      const startOfYear = new Date(today.getFullYear(), 0, 1);
+      return { dateFrom: startOfYear.toISOString(), dateTo: endOfDay(today).toISOString() };
+    }
+
+    if (/최근/.test(message)) {
+      const thirtyDaysAgo = new Date(today);
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+      return { dateFrom: thirtyDaysAgo.toISOString(), dateTo: endOfDay(today).toISOString() };
+    }
+
+    return null;
+  }
+
   private async findLexicalMatches(sourceId: number, query: string, limit: number): Promise<RetrievalResult[]> {
     const chunks = await prisma.documentChunk.findMany({
       where: {
@@ -280,17 +347,27 @@ export class ChatService {
     }));
   }
 
-  private async findPartialLexicalMatches(sourceId: number, query: string, limit: number): Promise<RetrievalResult[]> {
+  private async findPartialLexicalMatches(
+    sourceId: number,
+    query: string,
+    limit: number,
+    temporalRange?: { dateFrom: string; dateTo: string }
+  ): Promise<RetrievalResult[]> {
     const tokens = this.extractSearchTokens(query);
     if (tokens.length === 0) {
       return [];
     }
 
+    const dateFilter = temporalRange
+      ? { lastEditedAt: { gte: new Date(temporalRange.dateFrom), lte: new Date(temporalRange.dateTo) } }
+      : {};
+
     const candidates = await prisma.documentChunk.findMany({
       where: {
         document: {
           sourceId,
-          status: "active"
+          status: "active",
+          ...dateFilter
         },
         OR: tokens.map((token) => ({
           chunkText: {
@@ -358,11 +435,16 @@ export class ChatService {
     return uniqueTokens.slice(0, 10);
   }
 
-  private async retrieveHybridResults(sourceId: number, message: string, topK: number): Promise<HybridRetrievalOutput> {
+  private async retrieveHybridResults(
+    sourceId: number,
+    message: string,
+    topK: number,
+    temporalRange?: { dateFrom: string; dateTo: string }
+  ): Promise<HybridRetrievalOutput> {
     const semanticLimit = Math.max(topK * 4, 24);
     const lexicalLimit = Math.max(topK * 6, 48);
 
-    const lexicalResults = await this.findPartialLexicalMatches(sourceId, message, lexicalLimit);
+    const lexicalResults = await this.findPartialLexicalMatches(sourceId, message, lexicalLimit, temporalRange);
 
     let semanticResults: RetrievalResult[] = [];
     try {
@@ -377,7 +459,9 @@ export class ChatService {
         topK: semanticLimit,
         sourceId,
         status: "active",
-        embeddingDimension: embedResponse.dimensions
+        embeddingDimension: embedResponse.dimensions,
+        dateFrom: temporalRange?.dateFrom,
+        dateTo: temporalRange?.dateTo
       })) as RetrievalResult[];
     } catch (error) {
       const messageText = error instanceof Error ? error.message : "Hybrid semantic retrieval failed";
@@ -502,6 +586,8 @@ export class ChatService {
     sourceId: number;
     status: "active" | "deleted";
     embeddingDimension: number;
+    dateFrom?: string;
+    dateTo?: string;
   }): Promise<
     Array<{
       id: string | number;
@@ -526,7 +612,9 @@ export class ChatService {
         vector: params.vector,
         topK: params.topK,
         sourceId: params.sourceId,
-        status: params.status
+        status: params.status,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Qdrant search failed";
