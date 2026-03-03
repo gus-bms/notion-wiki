@@ -11,6 +11,7 @@ export class ChatController {
     sessionId: number;
     answer: string;
     citations: Citation[];
+    documents: Array<{ documentId: number; title: string; url: string; lastEditedAt: string | null }>;
     meta: { topK: number; retrievalMs: number; llmMs: number };
   }> {
     return this.chatService.chat(body);

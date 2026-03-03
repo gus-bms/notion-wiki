@@ -53,10 +53,18 @@ export const chatRequestSchema = z.object({
   message: z.string().min(1)
 });
 
+export const chatDocumentSchema = z.object({
+  documentId: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  lastEditedAt: z.string().nullable().optional()
+});
+
 export const chatResponseSchema = z.object({
   sessionId: z.number().int().positive(),
   answer: z.string().min(1),
   citations: z.array(citationSchema),
+  documents: z.array(chatDocumentSchema).default([]),
   meta: z.object({
     topK: z.number().int().positive(),
     retrievalMs: z.number().nonnegative(),
@@ -131,6 +139,7 @@ export type ListIngestPageFailuresQuery = z.infer<typeof listIngestPageFailuresQ
 export type IngestPageFailureOutput = z.infer<typeof ingestPageFailureSchema>;
 export type ListIngestPageFailuresOutput = z.infer<typeof listIngestPageFailuresResponseSchema>;
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
+export type ChatDocumentOutput = z.infer<typeof chatDocumentSchema>;
 export type ChatResponseOutput = z.infer<typeof chatResponseSchema>;
 export type FeedbackInput = z.infer<typeof feedbackSchema>;
 export type WorkspaceLoginInput = z.infer<typeof workspaceLoginSchema>;

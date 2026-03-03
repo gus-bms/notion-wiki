@@ -2,10 +2,13 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Citation = { chunkId: string; title: string; url: string; quote: string };
 
+type ChatDocument = { documentId: number; title: string; url: string; lastEditedAt?: string | null };
+
 type ChatResult = {
   sessionId: number;
   answer: string;
   citations: Citation[];
+  documents: ChatDocument[];
   meta: { topK: number; retrievalMs: number; llmMs: number };
 };
 
@@ -663,6 +666,26 @@ export function App(): JSX.Element {
                           );
                         })}
                       </div>
+                      {item.result.documents.length > 0 && (
+                        <div className="doc-grid">
+                          {item.result.documents.map((doc) => (
+                            <a
+                              key={doc.documentId}
+                              href={doc.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="doc-card"
+                            >
+                              <span className="doc-card-title">{doc.title || "Untitled"}</span>
+                              {doc.lastEditedAt && (
+                                <small className="doc-card-meta">
+                                  {new Date(doc.lastEditedAt).toLocaleDateString()}
+                                </small>
+                              )}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </article>
                 ))}

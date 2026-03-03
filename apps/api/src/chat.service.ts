@@ -7,6 +7,13 @@ import { parseChatResponse, DEFAULT_SYSTEM_PROMPT } from "@notion-wiki/prompts";
 import { toCitation, validateCitations } from "@notion-wiki/retrieval";
 import { QdrantClient } from "@notion-wiki/vector-store";
 
+interface ChatDocument {
+  documentId: number;
+  title: string;
+  url: string;
+  lastEditedAt: string | null;
+}
+
 interface RetrievalResult {
   id: string | number;
   score: number;
@@ -47,6 +54,7 @@ export class ChatService {
     sessionId: number;
     answer: string;
     citations: Citation[];
+    documents: ChatDocument[];
     meta: { topK: number; retrievalMs: number; llmMs: number };
   }> {
     const parsed = chatRequestSchema.parse(input);
@@ -90,9 +98,16 @@ export class ChatService {
       }
     }
 
-    if (!exactLookupRequested) {
+    if (retrievalResults.length < topK) {
       const hybrid = await this.retrieveHybridResults(parsed.sourceId, parsed.message, topK, temporalRange);
-      retrievalResults = hybrid.results;
+      const existingIds = new Set(retrievalResults.map((r) => r.id));
+      for (const res of hybrid.results) {
+        if (!existingIds.has(res.id)) {
+          retrievalResults.push(res);
+        }
+      }
+      // Re-apply diversity limit just in case combining them exceeded it locally
+      retrievalResults = this.applyDocumentDiversityLimit(retrievalResults, topK, 2);
       semanticCandidateCount = hybrid.semanticCount;
       lexicalCandidateCount = hybrid.lexicalCount;
       hybridEnabled = true;
@@ -111,14 +126,7 @@ export class ChatService {
     let citations: Citation[] = [];
     let llmMs = 0;
 
-    if (exactLookupRequested && contexts.length === 0) {
-      answer = "Exact phrase was not found in indexed documents for this source.";
-    } else if (exactLookupRequested && contexts.length > 0) {
-      citations = contexts.slice(0, 5).map((context) => toCitation(context));
-      answer = partialLexicalUsed
-        ? `Exact phrase was not found, but found ${contexts.length} partial match(es).`
-        : `Found ${contexts.length} exact match(es).`;
-    } else if (contexts.length > 0) {
+    if (contexts.length > 0) {
       const llmStartedAt = Date.now();
       try {
         const todayDate = new Date().toISOString().slice(0, 10);
@@ -199,10 +207,37 @@ export class ChatService {
       lexicalCandidateCount
     });
 
+    const seenDocumentIds = new Set<number>();
+    for (const r of retrievalResults) {
+      seenDocumentIds.add(r.payload.documentId);
+    }
+
+    const freshDocuments = await prisma.document.findMany({
+      where: { id: { in: Array.from(seenDocumentIds) } },
+      select: { id: true, title: true, url: true, lastEditedAt: true }
+    });
+
+    const freshMap = new Map(freshDocuments.map((d) => [d.id, d]));
+    const documentMap = new Map<number, ChatDocument>();
+    for (const r of retrievalResults) {
+      const docId = r.payload.documentId;
+      if (!documentMap.has(docId)) {
+        const fresh = freshMap.get(docId);
+        documentMap.set(docId, {
+          documentId: docId,
+          title: fresh?.title ?? r.payload.title,
+          url: fresh?.url ?? r.payload.url,
+          lastEditedAt: fresh?.lastEditedAt?.toISOString() ?? r.payload.lastEditedAt ?? null
+        });
+      }
+    }
+    const documents = Array.from(documentMap.values());
+
     return {
       sessionId: activeSession.id,
       answer,
       citations,
+      documents,
       meta: { topK, retrievalMs, llmMs }
     };
   }
@@ -223,14 +258,6 @@ export class ChatService {
     if (quoted.length > 0) {
       quoted.sort((a, b) => b.length - a.length);
       return quoted[0];
-    }
-
-    const colonMatch = trimmed.match(/[:：]\s*(.+)$/);
-    if (colonMatch?.[1]) {
-      const candidate = colonMatch[1].trim();
-      if (candidate.length >= 8) {
-        return candidate;
-      }
     }
 
     return null;
@@ -436,6 +463,23 @@ export class ChatService {
   }
 
   private async retrieveHybridResults(
+    sourceId: number,
+    message: string,
+    topK: number,
+    temporalRange?: { dateFrom: string; dateTo: string }
+  ): Promise<HybridRetrievalOutput> {
+    const result = await this.executeHybridRetrieval(sourceId, message, topK, temporalRange);
+
+    // Fallback: if temporal filter returned nothing, retry without date restriction.
+    if (temporalRange && result.results.length === 0) {
+      log("info", "chat.hybrid.temporal_fallback", { sourceId, dateFrom: temporalRange.dateFrom, dateTo: temporalRange.dateTo });
+      return this.executeHybridRetrieval(sourceId, message, topK, undefined);
+    }
+
+    return result;
+  }
+
+  private async executeHybridRetrieval(
     sourceId: number,
     message: string,
     topK: number,
