@@ -38,42 +38,58 @@ export class GeminiProvider implements LlmProvider {
       });
     }
 
-    const response = await withProviderRetry(
-      async () => {
-        const fetchResponse = await fetch(`${this.baseUrl}/models/${request.model}:batchEmbedContents`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": this.apiKey
-          },
-          body: JSON.stringify({
-            requests: request.texts.map((text) => ({
-              model: `models/${request.model}`,
-              taskType: request.taskType ?? "RETRIEVAL_DOCUMENT",
-              content: {
-                parts: [{ text }]
-              }
-            }))
-          }),
-          signal: AbortSignal.timeout(request.timeoutMs ?? 10_000)
-        });
+    const maxBatchSize = 10;
+    const allVectors: number[][] = [];
+    let dimensions = 0;
 
-        if (!fetchResponse.ok) {
-          throw await this.mapError(fetchResponse);
-        }
+    for (let i = 0; i < request.texts.length; i += maxBatchSize) {
+      const batchTexts = request.texts.slice(i, i + maxBatchSize);
 
-        return fetchResponse.json();
-      },
-      { maxRetries: request.maxRetries ?? 2, baseDelayMs: request.baseDelayMs, maxDelayMs: request.maxDelayMs }
-    );
+      const response = await withProviderRetry(
+        async () => {
+          const fetchResponse = await fetch(`${this.baseUrl}/models/${request.model}:batchEmbedContents`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": this.apiKey
+            },
+            body: JSON.stringify({
+              requests: batchTexts.map((text) => ({
+                model: `models/${request.model}`,
+                taskType: request.taskType ?? "RETRIEVAL_DOCUMENT",
+                content: {
+                  parts: [{ text }]
+                }
+              }))
+            }),
+            signal: AbortSignal.timeout(request.timeoutMs ?? 10_000)
+          });
 
-    const vectors = (response.embeddings ?? []).map((item: { values?: number[] }) => item.values ?? []);
-    const dimensions = vectors[0]?.length ?? 0;
+          if (!fetchResponse.ok) {
+            throw await this.mapError(fetchResponse);
+          }
+
+          return fetchResponse.json();
+        },
+        { maxRetries: request.maxRetries ?? 2, baseDelayMs: request.baseDelayMs, maxDelayMs: request.maxDelayMs }
+      );
+
+      const vectors = (response.embeddings ?? []).map((item: { values?: number[] }) => item.values ?? []);
+      if (vectors.length > 0 && dimensions === 0) {
+        dimensions = vectors[0]?.length ?? 0;
+      }
+      allVectors.push(...vectors);
+
+      if (i + maxBatchSize < request.texts.length) {
+        // Enforce a 650ms delay between batches to comfortably stay within 100 RPM limit (~92 RPM)
+        await new Promise((resolve) => setTimeout(resolve, 650));
+      }
+    }
 
     return {
       provider: this.name,
       model: request.model,
-      vectors,
+      vectors: allVectors,
       dimensions
     };
   }

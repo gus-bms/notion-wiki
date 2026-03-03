@@ -183,7 +183,7 @@ export function WorkspaceSettings({
 
         <div className="inline-actions">
           <button type="submit" disabled={loadingLogin}>
-            {loadingLogin ? "Saving..." : "Save and continue"}
+            {loadingLogin ? "Saving..." : hasSource ? "Update Source / Token" : "Save and continue"}
           </button>
           {hasSource && (
             <>

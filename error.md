@@ -1,23 +1,20 @@
-{
-    "sourceId": 1,
-    "sessionId": 8,
-    "message": "다음 문장이 있는 문서 찾아줘: 다중 후보 제안: Gemini 모델을 사용하여 3개의 메시지 후보를 생성하며, 사용자가 직접 선택"
-}
-
-{
-    "sessionId": 8,
-    "answer": "\"확인 불가\"",
-    "citations": [
-        {
-            "chunkId": "1:22333fc5-e9a5-80fd-8c8a-f7543182afb6:0:95071d682b33",
-            "title": "생성형 AI와 에이전트 기술로 나만의 AI 연구원 만들기",
-            "url": "https://www.notion.so/AI-AI-22333fc5e9a580fd8c8af7543182afb6",
-            "quote": "## 1. 목적 및 배경\n주제\n- 생성형 AI(LLM)와 에이전트 기술을 결합해 ‘나만의 AI 연구원’을 만드는 방법 소개\n검색 엔진 vs LLM\n- 검색 엔진: 키워드 매칭 기반, 결과를 링크 형태로 제공→사용자가 직접 정보 선별 필요 forcura.com\n- LLM: 자연어 이해·생성, 문서 요약 및 통합, 의도 기반 응답, 외부 지식 통합 가능 searchenginejournal.comforcura.com\n## 2."
-        }
-    ],
-    "meta": {
-        "topK": 8,
-        "retrievalMs": 706,
-        "llmMs": 5383
+[
+    {
+        "failureId": 1,
+        "sourceId": 2,
+        "notionPageId": "2f833fc5-e9a5-809c-a705-cfb210916c3c",
+        "status": "retry_queued",
+        "failureCount": 1,
+        "targetType": "data_source",
+        "targetIdValue": "25024e7f-075e-4948-a04e-4aa2bc584706",
+        "failureStage": "embedding",
+        "errorCode": "EMBEDDING_RATE_LIMITED",
+        "errorMessage": "{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+        "firstFailedAt": "2026-02-27T07:52:29.711Z",
+        "lastFailedAt": "2026-02-27T07:52:29.711Z",
+        "retryRequestedAt": "2026-03-03T02:08:00.213Z",
+        "retryRequestedBy": "::ffff:127.0.0.1",
+        "resolvedAt": null,
+        "resolvedIngestJobId": null
     }
-}
+]

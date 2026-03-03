@@ -384,75 +384,82 @@ export class IngestWorkerService implements OnModuleInit, OnModuleDestroy {
       const points: QdrantPoint[] = [];
       const currentChunkIds: string[] = [];
 
-      for (let index = 0; index < chunks.length; index += 1) {
-        const chunk = chunks[index];
-        const chunkId = buildChunkId({
-          sourceId,
-          notionPageId,
-          chunkIndex: chunk.chunkIndex,
-          contentHash: chunk.contentHash
-        });
-        const qdrantPointId = this.toQdrantPointId(chunkId);
-        currentChunkIds.push(chunkId);
+      const BATCH_SIZE = 20;
+      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+        const batch = chunks.slice(i, i + BATCH_SIZE);
+        
+        await Promise.all(
+          batch.map(async (chunk, batchIndex) => {
+            const index = i + batchIndex;
+            const chunkId = buildChunkId({
+              sourceId,
+              notionPageId,
+              chunkIndex: chunk.chunkIndex,
+              contentHash: chunk.contentHash
+            });
+            const qdrantPointId = this.toQdrantPointId(chunkId);
+            currentChunkIds.push(chunkId);
 
-        stage = "chunk_upsert";
-        await prisma.documentChunk.upsert({
-          where: { chunkId },
-          update: {
-            documentId: document.id,
-            chunkIndex: chunk.chunkIndex,
-            chunkText: chunk.chunkText,
-            startOffset: chunk.startOffset,
-            endOffset: chunk.endOffset,
-            tokenCount: chunk.tokenCount,
-            contentHash: chunk.contentHash
-          },
-          create: {
-            documentId: document.id,
-            chunkId,
-            chunkIndex: chunk.chunkIndex,
-            chunkText: chunk.chunkText,
-            startOffset: chunk.startOffset,
-            endOffset: chunk.endOffset,
-            tokenCount: chunk.tokenCount,
-            contentHash: chunk.contentHash
-          }
-        });
+            stage = "chunk_upsert";
+            await prisma.documentChunk.upsert({
+              where: { chunkId },
+              update: {
+                documentId: document.id,
+                chunkIndex: chunk.chunkIndex,
+                chunkText: chunk.chunkText,
+                startOffset: chunk.startOffset,
+                endOffset: chunk.endOffset,
+                tokenCount: chunk.tokenCount,
+                contentHash: chunk.contentHash
+              },
+              create: {
+                documentId: document.id,
+                chunkId,
+                chunkIndex: chunk.chunkIndex,
+                chunkText: chunk.chunkText,
+                startOffset: chunk.startOffset,
+                endOffset: chunk.endOffset,
+                tokenCount: chunk.tokenCount,
+                contentHash: chunk.contentHash
+              }
+            });
 
-        stage = "embedding_ref_upsert";
-        await prisma.embeddingRef.upsert({
-          where: { chunkId },
-          update: {
-            provider: embedResponse.provider,
-            model: embedResponse.model,
-            vectorDim: embedResponse.dimensions,
-            qdrantPointId
-          },
-          create: {
-            chunkId,
-            provider: embedResponse.provider,
-            model: embedResponse.model,
-            vectorDim: embedResponse.dimensions,
-            qdrantPointId
-          }
-        });
+            stage = "embedding_ref_upsert";
+            await prisma.embeddingRef.upsert({
+              where: { chunkId },
+              update: {
+                provider: embedResponse.provider,
+                model: embedResponse.model,
+                vectorDim: embedResponse.dimensions,
+                qdrantPointId
+              },
+              create: {
+                chunkId,
+                provider: embedResponse.provider,
+                model: embedResponse.model,
+                vectorDim: embedResponse.dimensions,
+                qdrantPointId
+              }
+            });
 
-        points.push({
-          id: qdrantPointId,
-          vector: embedResponse.vectors[index] ?? [],
-          payload: {
-            chunkId,
-            sourceId,
-            documentId: document.id,
-            notionPageId,
-            chunkIndex: chunk.chunkIndex,
-            title,
-            url,
-            text: chunk.chunkText,
-            lastEditedAt: lastEditedAt,
-            status: "active"
-          }
-        });
+            points.push({
+              id: qdrantPointId,
+              vector: embedResponse.vectors[index] ?? [],
+              payload: {
+                chunkId,
+                sourceId,
+                documentId: document.id,
+                notionPageId,
+                chunkIndex: chunk.chunkIndex,
+                title,
+                url,
+                text: chunk.chunkText,
+                lastEditedAt: lastEditedAt,
+                status: "active"
+              }
+            });
+          })
+        );
       }
 
       stage = "vector_upsert";
