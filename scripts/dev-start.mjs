@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { promises as fs } from "fs";
 import path from "path";
 import process from "process";
@@ -91,7 +91,31 @@ async function clearSession() {
   }
 }
 
+async function freePorts(ports) {
+  for (const port of ports) {
+    if (process.platform === "win32") {
+      try {
+        const out = execSync(`netstat -aon | findstr :${port}`).toString();
+        const lines = out.split('\n');
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && !isNaN(parseInt(pid)) && pid !== "0") {
+            execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+          }
+        }
+      } catch (e) {}
+    } else {
+      try {
+        execSync(`lsof -ti:${port} | xargs kill -9`, { stdio: "ignore" });
+      } catch (e) {}
+    }
+  }
+}
+
 async function main() {
+  await freePorts([3000, 5173]);
+
   const existing = await readExistingSession();
   if (existing?.childPid && processExists(existing.childPid)) {
     // eslint-disable-next-line no-console

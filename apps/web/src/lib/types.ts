@@ -82,3 +82,12 @@ export type IngestPageFailure = {
   resolvedAt: string | null;
   resolvedIngestJobId: number | null;
 };
+
+export type IngestJob = {
+  jobId: number;
+  type: string;
+  status: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  errorMessage: string | null;
+};

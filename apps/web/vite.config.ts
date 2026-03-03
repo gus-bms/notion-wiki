@@ -8,7 +8,8 @@ const configuredAppToken = process.env.VITE_APP_TOKEN?.trim() || process.env.APP
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173
+    port: 5173,
+    strictPort: true
   },
   define: {
     __API_BASE_URL__: JSON.stringify(apiBaseUrl),
