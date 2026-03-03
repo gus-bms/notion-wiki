@@ -7,22 +7,16 @@ interface ChatPanelProps {
   sourceId: number;
   sessionId: number | null;
   chatHistory: ChatThreadItem[];
-  selectedCitationKey: string;
   onSessionChange: (id: number | null) => void;
   onHistoryChange: (history: ChatThreadItem[]) => void;
-  onCitationSelect: (item: ChatThreadItem, citation: Citation, index: number) => void;
-  onClearCitation: () => void;
 }
 
 export function ChatPanel({
   sourceId,
   sessionId,
   chatHistory,
-  selectedCitationKey,
   onSessionChange,
-  onHistoryChange,
-  onCitationSelect,
-  onClearCitation
+  onHistoryChange
 }: ChatPanelProps): JSX.Element {
   const { pushToast } = useToast();
   const [question, setQuestion] = useState("");
@@ -86,12 +80,6 @@ export function ChatPanel({
       onSessionChange(result.sessionId);
       setQuestion("");
       onHistoryChange([...chatHistory, threadItem]);
-
-      if (result.citations.length > 0) {
-        onCitationSelect(threadItem, result.citations[0], 0);
-      } else {
-        onClearCitation();
-      }
     } catch (error) {
       pushToast("error", error instanceof Error ? error.message : "Chat request failed");
     } finally {
@@ -149,25 +137,6 @@ export function ChatPanel({
                 </span>
               </div>
               <p>{item.result.answer}</p>
-              <div className="citation-pills">
-                {item.result.citations.length === 0 && <small>No citations</small>}
-                {item.result.citations.map((citation, citationIndex) => {
-                  const key = `${item.localId}-${citationIndex}-${citation.chunkId}`;
-                  const active = selectedCitationKey === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={active ? "citation-pill citation-pill-active" : "citation-pill"}
-                      onClick={() => onCitationSelect(item, citation, citationIndex)}
-                      aria-pressed={active}
-                    >
-                      <span>{citation.title || "Untitled"}</span>
-                      <small>chunk {citation.chunkId}</small>
-                    </button>
-                  );
-                })}
-              </div>
               {item.result.documents.length > 0 && (
                 <div className="doc-grid">
                   {item.result.documents.map((doc) => (

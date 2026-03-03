@@ -132,7 +132,6 @@ export class ChatService {
         const todayDate = new Date().toISOString().slice(0, 10);
         const rawResponse = await this.provider.chat({
           model: process.env.GEMINI_CHAT_MODEL ?? "gemini-2.5-flash",
-          outputFormat: "json",
           systemInstruction: `${DEFAULT_SYSTEM_PROMPT}\n\nToday's date: ${todayDate}`,
           userMessage: parsed.message,
           contexts

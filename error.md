@@ -1,20 +1,84 @@
-[
-    {
-        "failureId": 1,
-        "sourceId": 2,
-        "notionPageId": "2f833fc5-e9a5-809c-a705-cfb210916c3c",
-        "status": "retry_queued",
-        "failureCount": 1,
-        "targetType": "data_source",
-        "targetIdValue": "25024e7f-075e-4948-a04e-4aa2bc584706",
-        "failureStage": "embedding",
-        "errorCode": "EMBEDDING_RATE_LIMITED",
-        "errorMessage": "{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      }\n    ]\n  }\n}\n",
-        "firstFailedAt": "2026-02-27T07:52:29.711Z",
-        "lastFailedAt": "2026-02-27T07:52:29.711Z",
-        "retryRequestedAt": "2026-03-03T02:08:00.213Z",
-        "retryRequestedBy": "::ffff:127.0.0.1",
-        "resolvedAt": null,
-        "resolvedIngestJobId": null
-    }
-]
+{
+ "meetingMinutes": {
+  "title": "[26.03.03] 주간 회의록",
+  "url": "https://www.notion.so/26-03-03-31833fc5e9a580d2af86f9ef64b83291",
+  "content": {
+   "주요안건": "",
+   "회의 내용": {
+    "보카": {
+     "진행 완료": [
+      "관리자 체험 정보 접수 UI 개선",
+      "안정성 개선 (실서버 적용 전, 추후 기능개발과 함께 적용 예정)",
+      "Sentry 설정 Untitled",
+      "CI / CD 설정"
+     ],
+     "진행 중": [],
+     "진행 예정": [
+      "버블콘 (경북교육청) SSO 및 로그인 연동작업",
+      "유료 결제자 상향 혜택 자동화",
+      "최우선 개선사항 (~누적 진행중) 2,3번",
+      "PG사 토스로 변경",
+      "성적 json 파일 reding 줄이기"
+     ]
+    },
+    "출결버스": {
+     "진행 완료": [],
+     "진행 중": [],
+     "진행 예정": []
+    },
+    "통합관리자": {
+     "진행 완료": [],
+     "진행 중": [],
+     "진행 예정": []
+    },
+    "내공": {
+     "진행 완료": [
+      "월 약정 상품 페이지 변경 Untitled",
+      "Untitled 피드백"
+     ],
+     "진행 중": [],
+     "진행 예정": [
+      "키인결제 변경"
+     ]
+    },
+    "오래영어": {
+     "진행 완료": [
+      "Untitled 피드백",
+      "초5, 초6, 중2 개정교과 세팅 (오래영어, 웅진)",
+      "웅진 APK 빌드 Untitled",
+      "갱신 카드등록 알림문자 추가"
+     ],
+     "진행 중": [
+      "Untitled",
+      "키인결제 변경"
+     ],
+     "진행 예정": []
+    },
+    "3030": {
+     "진행 완료": [],
+     "진행 중": [],
+     "진행 예정": []
+    },
+    "두고팡": {
+     "진행 완료": [],
+     "진행 중": [],
+     "진행 예정": []
+    },
+    "기타": [
+     "Git Commit Message Generator (commitmsg) 가이드",
+     "하비 : 2026.03.11 오전 반차 (기존 4일 오전 반차 취소)",
+     "크리스탈 : 2026.03.06 오후 반차 / 09.10 연차"
+    ]
+   },
+   "회의결과": ""
+  }
+ },
+ "citations": [
+  {
+   "chunkId": "2:31833fc5-e9a5-80d2-af86-f9ef64b83291:0:c0dc0dd16a62",
+   "title": "[26.03.03] 주간 회의록",
+   "url": "https://www.notion.so/26-03-03-31833fc5e9a580d2af86f9ef64b83291",
+   "quote": "## ✍ 주요안건\n## 📑 회의 내용\n👉 보카\n- [ 진행 완료 ]\n- 관리자 체험 정보 접수 UI 개선\n- 안정성 개선 (실서버 적용 전, 추후 기능개발과 함께 적용 예정)\n- Sentry 설정 Untitled\n- CI / CD 설정\n- [ 진행 중 ]\n- [ 진행 예정 ]\n- 버블콘 (경북교육청) SSO 및 로그인 연동작업\n- 유료 결제자 상향 혜택 자동화\n- 최우선 개선사항 (~누적 진행중) 2,3번\n- PG사 토스로 변경\n- 성적 json 파일 reding 줄이기\n👉 출결버스\n- [ 진행 완료 ]\n- [ 진행 중 ]\n- [ 진행 예정 ]\n👉 통합관리자\n- [ 진행 완료 ]\n- [ 진행 중 ]\n- [ 진행 예정 ]\n👉 내공\n- [ 진행 완료 ]\n- 월 약정 상품 페이지 변경 Untitled\n- Untitled 피드백\n- [ 진행 중 ]\n- [ 진행 예정 ]\n- 키인결제 변경\n👉 오래영어\n- [ 진행 완료 ]\n- Untitled 피드백\n- 초5, 초6, 중2 개정교과 세팅 (오래영어, 웅진)\n- 웅진 APK 빌드 Untitled\n- 갱신 카드등록 알림문자 추가\n- [ 진행 중 ]\n- Untitled\n- 키인결제 변경\n- [ 진행 예정 ]\n👉 3030\n- [ 진행 완료 ]\n- [ 진행 중 ]\n- [ 진행 예정 ]\n👉 두고팡\n- [ 진행 완료 ]\n- [ 진행 중 ]\n- [ 진행 예정 ]\n👉 기타\n- Git Commit Message Generator (commitmsg) 가이드\n- 하비 : 2026.03.11 오전 반차 (기존 4일 오전 반차 취소)\n- 크리스탈 : 2026.03.06 오후 반차 / 09.10 연차\n## 📢 회의결과"
+  }
+ ]
+}

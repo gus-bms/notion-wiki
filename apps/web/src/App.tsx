@@ -10,7 +10,6 @@ import {
 } from "./lib/types";
 import { WorkspaceSettings } from "./components/WorkspaceSettings";
 import { ChatPanel } from "./components/chat/ChatPanel";
-import { CitationInspector } from "./components/chat/CitationInspector";
 
 function AppShell(): JSX.Element {
   const { pushToast } = useToast();
@@ -19,7 +18,6 @@ function AppShell(): JSX.Element {
 
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatThreadItem[]>([]);
-  const [selectedCitation, setSelectedCitation] = useState<SelectedCitation | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   const [pageFailures, setPageFailures] = useState<IngestPageFailure[]>([]);
@@ -28,13 +26,6 @@ function AppShell(): JSX.Element {
   const source = workspace?.source ?? null;
   const sourceId = source?.sourceId ?? null;
   const hasSource = workspace?.hasSource === true && source !== null;
-
-  const selectedCitationKey = useMemo(() => {
-    if (!selectedCitation) {
-      return "";
-    }
-    return `${selectedCitation.sourceThreadLocalId}-${selectedCitation.sourceCitationIndex}-${selectedCitation.citation.chunkId}`;
-  }, [selectedCitation]);
 
   const unresolvedFailureCount = useMemo(
     () => pageFailures.filter((failure) => failure.status !== "resolved").length,
@@ -95,33 +86,18 @@ function AppShell(): JSX.Element {
         setShowSettings(false);
         return;
       }
-      if (key === "escape" && selectedCitation) {
-        event.preventDefault();
-        setSelectedCitation(null);
-      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [selectedCitation, showSettings]);
+  }, [showSettings]);
 
   function startNewSession(): void {
     setSessionId(null);
     setChatHistory([]);
-    setSelectedCitation(null);
     pushToast("info", "Started a new chat session.");
-  }
-
-  function handleCitationSelect(item: ChatThreadItem, citation: Citation, citationIndex: number): void {
-    setSelectedCitation({
-      citation,
-      fromQuestion: item.question,
-      fromAskedAtIso: item.askedAtIso,
-      sourceThreadLocalId: item.localId,
-      sourceCitationIndex: citationIndex
-    });
   }
 
   if (bootstrapping) {
@@ -216,16 +192,8 @@ function AppShell(): JSX.Element {
               sourceId={source.sourceId}
               sessionId={sessionId}
               chatHistory={chatHistory}
-              selectedCitationKey={selectedCitationKey}
               onSessionChange={setSessionId}
               onHistoryChange={setChatHistory}
-              onCitationSelect={handleCitationSelect}
-              onClearCitation={() => setSelectedCitation(null)}
-            />
-
-            <CitationInspector
-              selectedCitation={selectedCitation}
-              onClear={() => setSelectedCitation(null)}
             />
           </main>
         </>
