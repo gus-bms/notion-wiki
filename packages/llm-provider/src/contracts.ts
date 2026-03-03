@@ -5,6 +5,9 @@ export interface EmbedRequest {
   model: string;
   taskType?: "retrieval_document" | "retrieval_query";
   timeoutMs?: number;
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
 }
 
 export interface EmbedResponse {

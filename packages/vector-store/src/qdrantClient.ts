@@ -36,6 +36,16 @@ export class QdrantClient {
   }
 
   async ensureCollection(dimension: number): Promise<void> {
+    // Check if collection already exists and verify dimension matches.
+    const existing = await this.getCollectionDimension();
+    if (existing !== null) {
+      if (existing === dimension) {
+        return;
+      }
+      // Dimension mismatch — drop and recreate (e.g. model switch 3072→768).
+      await this.request(`/collections/${this.collection}`, { method: "DELETE" });
+    }
+
     try {
       await this.request(`/collections/${this.collection}`, {
         method: "PUT",
@@ -51,6 +61,17 @@ export class QdrantClient {
         return;
       }
       throw error;
+    }
+  }
+
+  private async getCollectionDimension(): Promise<number | null> {
+    try {
+      const response = await this.request<{
+        result: { config: { params: { vectors: { size: number } } } };
+      }>(`/collections/${this.collection}`, { method: "GET" });
+      return response.result?.config?.params?.vectors?.size ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -162,7 +183,7 @@ export class QdrantClient {
 
   private async request<T = unknown>(
     path: string,
-    options: { method: "PUT" | "POST" | "GET"; body?: unknown }
+    options: { method: "PUT" | "POST" | "GET" | "DELETE"; body?: unknown }
   ): Promise<T> {
     const response = await fetch(`${this.url}${path}`, {
       method: options.method,

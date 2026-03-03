@@ -64,7 +64,7 @@ export class GeminiProvider implements LlmProvider {
 
         return fetchResponse.json();
       },
-      { maxRetries: 2 }
+      { maxRetries: request.maxRetries ?? 2, baseDelayMs: request.baseDelayMs, maxDelayMs: request.maxDelayMs }
     );
 
     const vectors = (response.embeddings ?? []).map((item: { values?: number[] }) => item.values ?? []);

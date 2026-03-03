@@ -494,7 +494,7 @@ export class ChatService {
     try {
       const embedResponse = await this.provider.embed({
         texts: [message],
-        model: process.env.GEMINI_EMBED_MODEL ?? "gemini-embedding-001",
+        model: process.env.GEMINI_EMBED_MODEL ?? "text-embedding-004",
         taskType: "retrieval_query"
       });
 

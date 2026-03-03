@@ -13,7 +13,7 @@ const envSchema = z.object({
   NOTION_REQUESTS_PER_SECOND: z.coerce.number().min(1).max(10).default(3),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_CHAT_MODEL: z.string().min(1).default("gemini-2.5-flash"),
-  GEMINI_EMBED_MODEL: z.string().min(1).default("gemini-embedding-001")
+  GEMINI_EMBED_MODEL: z.string().min(1).default("text-embedding-004")
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

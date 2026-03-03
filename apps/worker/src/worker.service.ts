@@ -367,8 +367,11 @@ export class IngestWorkerService implements OnModuleInit, OnModuleDestroy {
       stage = "embedding";
       const embedResponse = await this.llmProvider.embed({
         texts: chunks.map((chunk) => chunk.chunkText),
-        model: process.env.GEMINI_EMBED_MODEL ?? "gemini-embedding-001",
-        taskType: "retrieval_document"
+        model: process.env.GEMINI_EMBED_MODEL ?? "text-embedding-004",
+        taskType: "retrieval_document",
+        maxRetries: 5,
+        baseDelayMs: 5_000,
+        maxDelayMs: 60_000
       });
 
       stage = "vector_collection_bootstrap";
