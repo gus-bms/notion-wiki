@@ -120,7 +120,7 @@ export function ChatPanel({
             <div className="bubble bubble-user">
               <div className="bubble-head">
                 <strong>You</strong>
-                <span>{new Date(item.askedAtIso).toLocaleString()}</span>
+                <span>{new Date(item.askedAtIso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
               </div>
               <p>{item.question}</p>
             </div>

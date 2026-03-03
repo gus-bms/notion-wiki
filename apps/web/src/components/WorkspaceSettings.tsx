@@ -3,6 +3,9 @@ import { useToast } from "./ui/ToastProvider";
 import { apiFetch } from "../lib/api";
 import { WorkspaceBootstrap, WorkspaceLoginResponse, IngestPageFailure, IngestJob } from "../lib/types";
 
+const formatKST = (iso: string): string =>
+  new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+
 interface WorkspaceSettingsProps {
   bootstrapping: boolean;
   workspace: WorkspaceBootstrap | null;
@@ -356,7 +359,7 @@ export function WorkspaceSettings({
               <small className="stab-failure-meta">
                 stage={failure.failureStage}
                 {failure.errorCode ? `, code=${failure.errorCode}` : ""}, count={failure.failureCount}, last=
-                {new Date(failure.lastFailedAt).toLocaleString()}
+                {formatKST(failure.lastFailedAt)}
               </small>
               <div className="stab-failure-actions">
                 <button
@@ -369,7 +372,7 @@ export function WorkspaceSettings({
                 </button>
                 {failure.resolvedAt && (
                   <small className="stab-failure-resolved">
-                    Resolved {new Date(failure.resolvedAt).toLocaleString()}
+                    Resolved {formatKST(failure.resolvedAt)}
                     {failure.resolvedIngestJobId ? ` (#${failure.resolvedIngestJobId})` : ""}
                   </small>
                 )}
@@ -420,8 +423,8 @@ export function WorkspaceSettings({
               <span className="stab-job-type">{job.type}</span>
             </div>
             <div className="stab-job-card-meta">
-              {job.startedAt && <span>Started: {new Date(job.startedAt).toLocaleString()}</span>}
-              {job.finishedAt && <span>Finished: {new Date(job.finishedAt).toLocaleString()}</span>}
+              {job.startedAt && <span>Started: {formatKST(job.startedAt)}</span>}
+              {job.finishedAt && <span>Finished: {formatKST(job.finishedAt)}</span>}
               {!job.startedAt && !job.finishedAt && <span>Waiting in queue…</span>}
             </div>
             {job.errorMessage && <p className="stab-job-error">{job.errorMessage}</p>}
@@ -498,7 +501,9 @@ export function WorkspaceSettings({
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               Failures
-              {pageFailures.length > 0 && <span className="stab-badge">{pageFailures.length}</span>}
+              {pageFailures.filter(f => f.status !== "resolved").length > 0 && (
+                <span className="stab-badge">{pageFailures.filter(f => f.status !== "resolved").length}</span>
+              )}
             </button>
           </>
         )}
