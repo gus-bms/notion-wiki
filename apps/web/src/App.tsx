@@ -5,7 +5,8 @@ import {
   WorkspaceBootstrap,
   ChatThreadItem,
   SelectedCitation,
-  Citation
+  Citation,
+  IngestPageFailure
 } from "./lib/types";
 import { WorkspaceSettings } from "./components/WorkspaceSettings";
 import { ChatPanel } from "./components/chat/ChatPanel";
@@ -21,6 +22,9 @@ function AppShell(): JSX.Element {
   const [selectedCitation, setSelectedCitation] = useState<SelectedCitation | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
+  const [pageFailures, setPageFailures] = useState<IngestPageFailure[]>([]);
+  const [loadingPageFailures, setLoadingPageFailures] = useState(false);
+
   const source = workspace?.source ?? null;
   const sourceId = source?.sourceId ?? null;
   const hasSource = workspace?.hasSource === true && source !== null;
@@ -31,6 +35,34 @@ function AppShell(): JSX.Element {
     }
     return `${selectedCitation.sourceThreadLocalId}-${selectedCitation.sourceCitationIndex}-${selectedCitation.citation.chunkId}`;
   }, [selectedCitation]);
+
+  const unresolvedFailureCount = useMemo(
+    () => pageFailures.filter((failure) => failure.status !== "resolved").length,
+    [pageFailures]
+  );
+
+  async function loadPageFailures(targetSourceId: number, includeResolved = false): Promise<void> {
+    setLoadingPageFailures(true);
+    try {
+      const result = await apiFetch<{ failures: IngestPageFailure[] }>(
+        `/ingest/page-failures?sourceId=${targetSourceId}&includeResolved=${includeResolved ? "1" : "0"}`
+      );
+      setPageFailures(result.failures);
+    } catch (error) {
+      pushToast("error", error instanceof Error ? error.message : "Failed to load page failures");
+      setPageFailures([]);
+    } finally {
+      setLoadingPageFailures(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!sourceId) {
+      setPageFailures([]);
+      return;
+    }
+    void loadPageFailures(sourceId, false);
+  }, [sourceId]);
 
   async function loadBootstrap(silentError = false): Promise<void> {
     setBootstrapping(true);
@@ -132,6 +164,9 @@ function AppShell(): JSX.Element {
               sourceId={sourceId}
               onBootstrapComplete={loadBootstrap}
               withHeading={true}
+              pageFailures={pageFailures}
+              loadingPageFailures={loadingPageFailures}
+              onReloadFailures={(includeResolved) => sourceId && loadPageFailures(sourceId, includeResolved)}
             />
           </div>
         </section>
@@ -167,6 +202,12 @@ function AppShell(): JSX.Element {
           {source.documentCount === 0 && source.activeTargetCount > 0 && (
             <section className="callout callout-info">
               <strong>No indexed documents yet.</strong> Open workspace settings and run incremental sync, then start chatting with citations.
+            </section>
+          )}
+
+          {unresolvedFailureCount > 0 && (
+            <section className="callout callout-warning">
+              <strong>{unresolvedFailureCount} page(s) failed to index chunks.</strong> Open workspace settings and retry failed pages.
             </section>
           )}
 
@@ -206,6 +247,9 @@ function AppShell(): JSX.Element {
               sourceId={sourceId}
               onBootstrapComplete={loadBootstrap}
               onClose={() => setShowSettings(false)}
+              pageFailures={pageFailures}
+              loadingPageFailures={loadingPageFailures}
+              onReloadFailures={(includeResolved) => sourceId && loadPageFailures(sourceId, includeResolved)}
             />
           </section>
         </div>

@@ -11,6 +11,9 @@ interface WorkspaceSettingsProps {
   onBootstrapComplete: (silentError?: boolean) => Promise<void>;
   onClose?: () => void;
   withHeading?: boolean;
+  pageFailures: IngestPageFailure[];
+  loadingPageFailures: boolean;
+  onReloadFailures: (includeResolved: boolean) => void;
 }
 
 export function WorkspaceSettings({
@@ -20,7 +23,10 @@ export function WorkspaceSettings({
   sourceId,
   onBootstrapComplete,
   onClose,
-  withHeading = false
+  withHeading = false,
+  pageFailures,
+  loadingPageFailures,
+  onReloadFailures
 }: WorkspaceSettingsProps): JSX.Element {
   const { pushToast } = useToast();
   const source = workspace?.source ?? null;
@@ -32,8 +38,6 @@ export function WorkspaceSettings({
   const [loadingLogin, setLoadingLogin] = useState(false);
   const [syncModeLoading, setSyncModeLoading] = useState<"incremental" | "full" | null>(null);
 
-  const [pageFailures, setPageFailures] = useState<IngestPageFailure[]>([]);
-  const [loadingPageFailures, setLoadingPageFailures] = useState(false);
   const [includeResolvedFailures, setIncludeResolvedFailures] = useState(false);
   const [retryingFailureId, setRetryingFailureId] = useState<number | null>(null);
 
@@ -44,28 +48,20 @@ export function WorkspaceSettings({
     }
   }, [source]);
 
-  async function loadPageFailures(targetSourceId: number, includeResolved = false): Promise<void> {
-    setLoadingPageFailures(true);
+  async function retryPageFailure(failureId: number): Promise<void> {
+    setRetryingFailureId(failureId);
     try {
-      const result = await apiFetch<{ failures: IngestPageFailure[] }>(
-        `/ingest/page-failures?sourceId=${targetSourceId}&includeResolved=${includeResolved ? "1" : "0"}`
-      );
-      setPageFailures(result.failures);
+      const result = await apiFetch<{ jobId: number; queued: true }>(`/ingest/page-failures/${failureId}/retry`, {
+        method: "POST"
+      });
+      pushToast("success", `Page retry queued (#${result.jobId}).`);
+      onReloadFailures(includeResolvedFailures);
     } catch (error) {
-      pushToast("error", error instanceof Error ? error.message : "Failed to load page failures");
-      setPageFailures([]);
+      pushToast("error", error instanceof Error ? error.message : "Failed to retry page failure");
     } finally {
-      setLoadingPageFailures(false);
+      setRetryingFailureId(null);
     }
   }
-
-  useEffect(() => {
-    if (!sourceId) {
-      setPageFailures([]);
-      return;
-    }
-    void loadPageFailures(sourceId, includeResolvedFailures);
-  }, [sourceId, includeResolvedFailures]);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -137,7 +133,8 @@ export function WorkspaceSettings({
 
       pushToast("success", `${mode === "full" ? "Full" : "Incremental"} sync queued (#${result.jobId}).`);
 
-      await Promise.all([onBootstrapComplete(true), loadPageFailures(sourceId, includeResolvedFailures)]);
+      await onBootstrapComplete(true);
+      onReloadFailures(includeResolvedFailures);
     } catch (error) {
       pushToast("error", error instanceof Error ? error.message : `Failed to queue ${mode} sync`);
     } finally {
@@ -220,7 +217,10 @@ export function WorkspaceSettings({
                 <input
                   type="checkbox"
                   checked={includeResolvedFailures}
-                  onChange={(event) => setIncludeResolvedFailures(event.target.checked)}
+                  onChange={(event) => {
+                    setIncludeResolvedFailures(event.target.checked);
+                    onReloadFailures(event.target.checked);
+                  }}
                 />
                 Include resolved
               </label>
@@ -228,7 +228,7 @@ export function WorkspaceSettings({
                 type="button"
                 className="button-secondary"
                 disabled={loadingPageFailures || !sourceId}
-                onClick={() => sourceId && loadPageFailures(sourceId, includeResolvedFailures)}
+                onClick={() => onReloadFailures(includeResolvedFailures)}
               >
                 {loadingPageFailures ? "Loading..." : "Refresh"}
               </button>
@@ -252,6 +252,22 @@ export function WorkspaceSettings({
                     {failure.errorCode ? `, code=${failure.errorCode}` : ""}, count={failure.failureCount}, last=
                     {new Date(failure.lastFailedAt).toLocaleString()}
                   </small>
+                  <div className="inline-actions">
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={failure.status === "resolved" || retryingFailureId === failure.failureId}
+                      onClick={() => void retryPageFailure(failure.failureId)}
+                    >
+                      {retryingFailureId === failure.failureId ? "Queueing..." : "Retry this page"}
+                    </button>
+                    {failure.resolvedAt && (
+                      <small>
+                        Resolved at {new Date(failure.resolvedAt).toLocaleString()}
+                        {failure.resolvedIngestJobId ? ` (#${failure.resolvedIngestJobId})` : ""}
+                      </small>
+                    )}
+                  </div>
                 </article>
               ))}
           </div>
