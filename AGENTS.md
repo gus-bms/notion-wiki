@@ -165,6 +165,62 @@ If non-trivial, follow the full workflow below.
 
 ---
 
+## Commit Workflow (after implementation)
+
+After completing any implementation, the agent must:
+
+### 1. Post a Work Report
+
+Report the following before committing:
+
+```
+### Work Report
+
+**변경 유형:** fix | feat | refactor | docs | chore
+**영향 범위:** 변경된 패키지/파일 목록
+**주요 변경:**
+- 변경 내용 요약 (bullet)
+
+**타입체크/빌드:** 통과 | 실패 | 미실행
+```
+
+### 2. Wait for user approval
+
+Commit **only** when the user explicitly replies with one of:
+- `ok` / `응` / `ㅇㅋ` / `커밋해줘` / `commit`
+
+Do NOT commit proactively without this confirmation.
+
+### 3. Commit to main
+
+When approval is received:
+
+1. Stage only files changed during the implementation (no `.env`, no lock files unless dependency changed).
+2. Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+   ```
+   <type>(<scope>): <short description>
+   ```
+   Types: `fix`, `feat`, `refactor`, `docs`, `chore`, `perf`, `test`
+   Scope: package or feature area (e.g. `retrieval`, `chat`, `auth`, `vector-store`)
+
+3. Append Co-Author footer:
+   ```
+   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+   ```
+
+4. Commit directly to `main` (no branch, no PR, unless the change is high-risk).
+
+5. Do **not** push unless the user explicitly says `push` or `push해줘`.
+
+#### Example commit message
+```
+fix(chat): inject today's date into system prompt and add temporal Qdrant filter
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+
+---
+
 ## Directory Conventions
 
 Recommended (adjust to actual repo structure):
