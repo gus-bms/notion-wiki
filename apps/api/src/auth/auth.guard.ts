@@ -16,8 +16,8 @@ export class AppTokenGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{ headers: Record<string, string | undefined> }>();
-    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+    const request = context.switchToHttp().getRequest<{ headers: Record<string, string | undefined>; query?: Record<string, string | undefined> }>();
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "") ?? request.query?.token;
     const expected = process.env.APP_TOKEN ?? "";
 
     if (!token || !expected) {

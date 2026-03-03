@@ -78,9 +78,28 @@ export function WorkspaceSettings({
   }
 
   useEffect(() => {
-    if (activeTab === "jobs" && sourceId) {
+    if (activeTab !== "jobs" || !sourceId) return;
+
+    // Initial load
+    void loadJobs();
+
+    // SSE connection for real-time updates
+    const apiBase = (typeof __API_BASE_URL__ !== "undefined" && __API_BASE_URL__?.trim()) ? __API_BASE_URL__ : "http://localhost:3000";
+    const appToken = (typeof __APP_TOKEN__ !== "undefined" && __APP_TOKEN__?.trim()) ? __APP_TOKEN__ : "";
+    const url = `${apiBase}/ingest/jobs/stream?sourceId=${sourceId}&token=${encodeURIComponent(appToken)}`;
+    const es = new EventSource(url);
+
+    es.addEventListener("job-event", () => {
       void loadJobs();
-    }
+    });
+
+    es.onerror = () => {
+      // Silently reconnect (EventSource auto-reconnects)
+    };
+
+    return () => {
+      es.close();
+    };
   }, [activeTab, sourceId]);
 
   useEffect(() => {

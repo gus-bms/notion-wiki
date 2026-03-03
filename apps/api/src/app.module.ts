@@ -7,6 +7,7 @@ import { FeedbackController } from "./feedback.controller";
 import { FeedbackService } from "./feedback.service";
 import { HealthController } from "./health.controller";
 import { IngestController } from "./ingest.controller";
+import { IngestJobEventsService } from "./ingest.job-events.service";
 import { IngestQueueService } from "./ingest.queue.service";
 import { IngestService } from "./ingest.service";
 import { SourcesController } from "./sources.controller";
@@ -29,6 +30,7 @@ import { WorkspaceService } from "./workspace.service";
   providers: [
     ChatService,
     FeedbackService,
+    IngestJobEventsService,
     IngestQueueService,
     IngestService,
     SourcesService,

@@ -1,10 +1,26 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, Req, Sse, MessageEvent } from "@nestjs/common";
 import { IngestService } from "./ingest.service";
+import { IngestJobEventsService } from "./ingest.job-events.service";
+import { Observable, map, startWith } from "rxjs";
 
 @Controller()
 export class IngestController {
-  constructor(private readonly ingestService: IngestService) {}
+  constructor(
+    private readonly ingestService: IngestService,
+    private readonly jobEventsService: IngestJobEventsService
+  ) {}
 
+  @Sse("ingest/jobs/stream")
+  jobStream(@Query("sourceId") sourceId?: string): Observable<MessageEvent> {
+    const srcId = sourceId ? Number(sourceId) : undefined;
+    return this.jobEventsService.getStream().pipe(
+      startWith({ type: "connected" as const, jobId: "0" }),
+      map((event) => ({
+        data: { ...event, sourceId: srcId },
+        type: "job-event"
+      }))
+    );
+  }
   @Post("ingest/run")
   async runIngest(@Body() body: unknown, @Req() request: { ip?: string }): Promise<{ jobId: number; queued: true }> {
     const requestedBy = request.ip ?? "api";
