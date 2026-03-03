@@ -132,6 +132,7 @@ export class ChatService {
         const todayDate = new Date().toISOString().slice(0, 10);
         const rawResponse = await this.provider.chat({
           model: process.env.GEMINI_CHAT_MODEL ?? "gemini-2.5-flash",
+          outputFormat: "plain_text",
           systemInstruction: `${DEFAULT_SYSTEM_PROMPT}\n\nToday's date: ${todayDate}`,
           userMessage: parsed.message,
           contexts
@@ -241,8 +242,67 @@ export class ChatService {
     };
   }
 
-  private extractLexicalCandidate(message: string): string | null {
-    const trimmed = message.trim();
+  async getSessions(sourceId: number) {
+    const sessions = await prisma.chatSession.findMany({
+      where: { sourceId },
+      include: {
+        messages: {
+          where: { role: "user" },
+          orderBy: { createdAt: "asc" },
+          take: 1
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return {
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        title: s.messages[0]?.messageText.slice(0, 40) ?? "New Chat",
+        createdAt: s.createdAt.toISOString()
+      }))
+    };
+  }
+
+  async getSessionDetails(sessionId: number) {
+    const session = await prisma.chatSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        messages: {
+          orderBy: { createdAt: "asc" }
+        }
+      }
+    });
+
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
+    return {
+      id: session.id,
+      createdAt: session.createdAt.toISOString(),
+      messages: session.messages.map((m) => {
+        const citations = m.citationsJson ? (m.citationsJson as unknown as Citation[]) : undefined;
+        const meta = m.metaJson
+          ? (m.metaJson as { topK: number; retrievalMs: number; llmMs: number })
+          : undefined;
+
+        return {
+          id: m.id,
+          role: m.role,
+          messageText: m.messageText,
+          answerText: m.answerText,
+          citations,
+          documents: [], // We don't historically persist documents specifically, UI will adapt
+          meta,
+          createdAt: m.createdAt.toISOString()
+        };
+      })
+    };
+  }
+
+  private extractLexicalCandidate(prompt: string): string | null {
+    const trimmed = prompt.trim();
     if (!trimmed) {
       return null;
     }

@@ -1,5 +1,5 @@
-import { Body, Controller, Post } from "@nestjs/common";
-import { Citation } from "@notion-wiki/contracts";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from "@nestjs/common";
+import { Citation, ChatSessionListOutput, ChatSessionDetailOutput } from "@notion-wiki/contracts";
 import { ChatService } from "./chat.service";
 
 @Controller("chat")
@@ -15,5 +15,15 @@ export class ChatController {
     meta: { topK: number; retrievalMs: number; llmMs: number };
   }> {
     return this.chatService.chat(body);
+  }
+
+  @Get("sessions")
+  async getSessions(@Query("sourceId", ParseIntPipe) sourceId: number): Promise<ChatSessionListOutput> {
+    return this.chatService.getSessions(sourceId);
+  }
+
+  @Get("sessions/:id")
+  async getSessionDetails(@Param("id", ParseIntPipe) id: number): Promise<ChatSessionDetailOutput> {
+    return this.chatService.getSessionDetails(id);
   }
 }

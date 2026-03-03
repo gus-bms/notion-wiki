@@ -72,6 +72,39 @@ export const chatResponseSchema = z.object({
   })
 });
 
+export const chatSessionListSchema = z.object({
+  sessions: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      title: z.string(),
+      createdAt: z.string()
+    })
+  )
+});
+
+export const chatSessionDetailSchema = z.object({
+  id: z.number().int().positive(),
+  createdAt: z.string(),
+  messages: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      role: z.enum(["user", "assistant"]),
+      messageText: z.string(),
+      answerText: z.string().nullable(),
+      citations: z.array(citationSchema).optional(),
+      documents: z.array(chatDocumentSchema).optional(),
+      meta: z
+        .object({
+          topK: z.number().int().positive(),
+          retrievalMs: z.number().nonnegative(),
+          llmMs: z.number().nonnegative()
+        })
+        .optional(),
+      createdAt: z.string()
+    })
+  )
+});
+
 export const feedbackSchema = z.object({
   messageId: z.number().int().positive(),
   score: z.union([z.literal(-1), z.literal(1)]),
@@ -145,3 +178,5 @@ export type FeedbackInput = z.infer<typeof feedbackSchema>;
 export type WorkspaceLoginInput = z.infer<typeof workspaceLoginSchema>;
 export type WorkspaceBootstrapOutput = z.infer<typeof workspaceBootstrapSchema>;
 export type WorkspaceLoginResponseOutput = z.infer<typeof workspaceLoginResponseSchema>;
+export type ChatSessionListOutput = z.infer<typeof chatSessionListSchema>;
+export type ChatSessionDetailOutput = z.infer<typeof chatSessionDetailSchema>;
