@@ -130,13 +130,12 @@ export function ChatPanel({
             </div>
 
             <div className="bubble bubble-assistant">
-              <div className="bubble-head">
-                <strong>Assistant</strong>
+              <div className="bubble-head" style={{ marginBottom: "0.4rem" }}>
+                <strong>Semantic Search Results</strong>
                 <span>
-                  topK={item.result.meta.topK}, retrieval={item.result.meta.retrievalMs}ms, llm={item.result.meta.llmMs}ms
+                  retrieval: {item.result.meta.retrievalMs}ms, llm: {item.result.meta.llmMs}ms
                 </span>
               </div>
-              <p>{item.result.answer}</p>
               {item.result.documents.length > 0 && (
                 <div className="doc-grid">
                   {item.result.documents.map((doc) => (
