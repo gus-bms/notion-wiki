@@ -105,10 +105,6 @@ export function ChatPanel({
 
   return (
     <section className="thread-panel">
-      <div className="thread-head">
-        <h2>Chat</h2>
-        <span>Session {sessionId ?? "new"}</span>
-      </div>
 
       <div className="thread-list">
         {chatHistory.length === 0 && (
@@ -167,18 +163,21 @@ export function ChatPanel({
         <label className="sr-only" htmlFor="question">
           Question
         </label>
-        <textarea
-          id="question"
-          ref={composerRef}
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={handleComposerKeyDown}
-          rows={4}
-          placeholder="Ask from indexed Notion content... (Enter to send, Shift+Enter for newline)"
-        />
-        <div className="inline-actions">
-          <button type="submit" disabled={loadingChat || question.trim().length === 0}>
-            {loadingChat ? "Asking..." : "Ask"}
+        <div className="input-wrapper">
+          <textarea
+            id="question"
+            ref={composerRef}
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            rows={2}
+            placeholder="Ask from indexed Notion content..."
+          />
+          <button type="submit" disabled={loadingChat || question.trim().length === 0} title="Send message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
           </button>
         </div>
       </form>

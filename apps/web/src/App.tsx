@@ -10,6 +10,8 @@ import {
 } from "./lib/types";
 import { WorkspaceSettings } from "./components/WorkspaceSettings";
 import { ChatPanel } from "./components/chat/ChatPanel";
+import { Sidebar } from "./components/chat/Sidebar";
+import { ChatSessionDetailOutput } from "./lib/types";
 
 function AppShell(): JSX.Element {
   const { pushToast } = useToast();
@@ -100,6 +102,55 @@ function AppShell(): JSX.Element {
     pushToast("info", "Started a new chat session.");
   }
 
+  async function handleSessionSelect(newSessionId: number | null): Promise<void> {
+    if (newSessionId === null) {
+      startNewSession();
+      return;
+    }
+    
+    setSessionId(newSessionId);
+    try {
+      const detail = await apiFetch<ChatSessionDetailOutput>(`/chat/sessions/${newSessionId}`);
+      // Re-map messages to ChatThreadItem shape
+      const mappedHistory: ChatThreadItem[] = detail.messages
+        .filter((m) => m.role === "user")
+        .map((m) => {
+          // Find the corresponding assistant answer
+          // Our simple history assumes pairs, but DB stores them.
+          const answerMsg = detail.messages.find(
+            (am) => am.role === "assistant" && am.createdAt > m.createdAt
+          );
+          
+          return {
+            localId: String(m.id),
+            question: m.messageText,
+            askedAtIso: m.createdAt,
+            result: answerMsg ? {
+              sessionId: newSessionId,
+              answer: answerMsg.answerText ?? "",
+              citations: answerMsg.citations ?? [],
+              documents: answerMsg.documents ?? [],
+              meta: answerMsg.meta ?? {
+                topK: 8,
+                retrievalMs: 0,
+                llmMs: 0
+              }
+            } : {
+              sessionId: newSessionId,
+              answer: "No response recorded.",
+              citations: [],
+              documents: [],
+              meta: { topK: 0, retrievalMs: 0, llmMs: 0 }
+            }
+          };
+        });
+
+      setChatHistory(mappedHistory);
+    } catch (error) {
+      pushToast("error", "Failed to load session details.");
+    }
+  }
+
   if (bootstrapping) {
     return (
       <div className="app-shell">
@@ -112,24 +163,18 @@ function AppShell(): JSX.Element {
   }
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div>
-          <h1>notion-wiki</h1>
-          <p>Ask internal knowledge and verify every answer with citations.</p>
-        </div>
-        {hasSource && (
-          <div className="header-actions">
-            <button type="button" className="button-secondary" onClick={() => setShowSettings(true)}>
-              Workspace settings
-            </button>
-            <button type="button" className="button-secondary" onClick={startNewSession}>
-              New session
-            </button>
-          </div>
-        )}
-      </header>
-
+    <div className="chatgpt-layout">
+      {hasSource && source && (
+        <Sidebar
+          sourceId={source.sourceId}
+          currentSessionId={sessionId}
+          onSelectSession={handleSessionSelect}
+          workspace={workspace}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      )}
+      
+      <div className="app-shell">
       {!hasSource && (
         <section className="auth-shell">
           <div className="auth-card">
@@ -145,48 +190,11 @@ function AppShell(): JSX.Element {
               onReloadFailures={(includeResolved) => sourceId && loadPageFailures(sourceId, includeResolved)}
             />
           </div>
-        </section>
+         </section>
       )}
 
       {hasSource && source && (
         <>
-          <section className="status-row">
-            <div className="status-chip">
-              <span>Source</span>
-              <strong>{source.name}</strong>
-            </div>
-            <div className="status-chip">
-              <span>Active targets</span>
-              <strong>{source.activeTargetCount}</strong>
-            </div>
-            <div className="status-chip">
-              <span>Indexed docs</span>
-              <strong>{source.documentCount}</strong>
-            </div>
-            <div className="status-chip">
-              <span>Latest ingest</span>
-              <strong>{workspace?.latestIngestJob?.status ?? "none"}</strong>
-            </div>
-          </section>
-
-          {source.activeTargetCount === 0 && (
-            <section className="callout callout-warning">
-              <strong>No active targets.</strong> Open workspace settings and save token with auto-discover enabled.
-            </section>
-          )}
-
-          {source.documentCount === 0 && source.activeTargetCount > 0 && (
-            <section className="callout callout-info">
-              <strong>No indexed documents yet.</strong> Open workspace settings and run incremental sync, then start chatting with citations.
-            </section>
-          )}
-
-          {unresolvedFailureCount > 0 && (
-            <section className="callout callout-warning">
-              <strong>{unresolvedFailureCount} page(s) failed to index chunks.</strong> Open workspace settings and retry failed pages.
-            </section>
-          )}
-
           <main className="chat-layout">
             <ChatPanel
               sourceId={source.sourceId}
@@ -222,6 +230,7 @@ function AppShell(): JSX.Element {
           </section>
         </div>
       )}
+      </div>
     </div>
   );
 }

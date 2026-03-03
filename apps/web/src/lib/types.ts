@@ -1,5 +1,7 @@
 export type Citation = { chunkId: string; title: string; url: string; quote: string };
 
+export type { ChatSessionListOutput, ChatSessionDetailOutput } from "@notion-wiki/contracts";
+
 export type ChatDocument = { documentId: number; title: string; url: string; lastEditedAt?: string | null };
 
 export type ChatResult = {
@@ -11,7 +13,7 @@ export type ChatResult = {
 };
 
 export type ChatThreadItem = {
-  localId: number;
+  localId: string | number;
   question: string;
   result: ChatResult;
   askedAtIso: string;
