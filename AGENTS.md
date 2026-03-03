@@ -210,7 +210,8 @@ When approval is received:
 
 4. Commit directly to `main` (no branch, no PR, unless the change is high-risk).
 
-5. Do **not** push unless the user explicitly says `push` or `push해줘`.
+5. Immediately after committing, run `git push origin main` automatically.
+   Do **not** ask for separate push confirmation.
 
 #### Example commit message
 ```
