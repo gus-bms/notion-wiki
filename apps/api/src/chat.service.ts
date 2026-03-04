@@ -98,14 +98,23 @@ export class ChatService {
 
   /**
    * Detect whether a 429 error is RPM/TPM (per-minute) or RPD (per-day).
-   * Gemini error messages typically contain "per minute" or "per day".
+   * Checks the full error structure including Gemini's nested quotaFailure details.
    */
   private detectLimitReason(error: any): "rpm" | "rpd" {
-    const msg = (
-      error?.message ||
-      error?.errorDetails?.[0]?.reason ||
-      ""
-    ).toLowerCase();
+    try {
+      const fullText = JSON.stringify(error).toLowerCase();
+      if (
+        fullText.includes("perday") ||
+        fullText.includes("per day") ||
+        fullText.includes("per_day") ||
+        fullText.includes("daily")
+      ) {
+        return "rpd";
+      }
+    } catch {
+      // JSON.stringify failed, fall through to simple check
+    }
+    const msg = (error?.message || "").toLowerCase();
     if (msg.includes("per day") || msg.includes("daily")) {
       return "rpd";
     }
@@ -794,34 +803,87 @@ export class ChatService {
     );
 
     let semanticResults: RetrievalResult[] = [];
-    try {
-      const embedKeyInfo = await this.getActiveApiKey();
-      if (!embedKeyInfo) throw new Error("No active API key for embedding");
-      const embedProvider = new GeminiProvider(embedKeyInfo.key);
-      const embedResponse = await embedProvider.embed({
-        texts: [message],
-        model: process.env.GEMINI_EMBED_MODEL ?? "text-embedding-004",
-        taskType: "retrieval_query",
-      });
+    {
+      const maxEmbedAttempts = 3;
+      let embedAttempt = 0;
+      let embedSuccess = false;
 
-      semanticResults = (await this.searchWithCollectionRecovery({
-        vector: embedResponse.vectors[0] ?? [],
-        topK: semanticLimit,
-        sourceId,
-        status: "active",
-        embeddingDimension: embedResponse.dimensions,
-        dateFrom: temporalRange?.dateFrom,
-        dateTo: temporalRange?.dateTo,
-      })) as RetrievalResult[];
-    } catch (error) {
-      const messageText =
-        error instanceof Error
-          ? error.message
-          : "Hybrid semantic retrieval failed";
-      log("warn", "chat.hybrid.semantic_failed", {
-        sourceId,
-        message: messageText,
-      });
+      while (embedAttempt < maxEmbedAttempts && !embedSuccess) {
+        embedAttempt++;
+        const embedKeyInfo = await this.getActiveApiKey();
+        if (!embedKeyInfo) {
+          log("warn", "chat.embed.no_keys_available");
+          break;
+        }
+
+        try {
+          const embedProvider = new GeminiProvider(embedKeyInfo.key);
+          const embedResponse = await embedProvider.embed({
+            texts: [message],
+            model: process.env.GEMINI_EMBED_MODEL ?? "text-embedding-004",
+            taskType: "retrieval_query",
+          });
+
+          semanticResults = (await this.searchWithCollectionRecovery({
+            vector: embedResponse.vectors[0] ?? [],
+            topK: semanticLimit,
+            sourceId,
+            status: "active",
+            embeddingDimension: embedResponse.dimensions,
+            dateFrom: temporalRange?.dateFrom,
+            dateTo: temporalRange?.dateTo,
+          })) as RetrievalResult[];
+
+          // Mark key as used
+          if (embedKeyInfo.id !== -1) {
+            await prisma.llmApiKey.update({
+              where: { id: embedKeyInfo.id },
+              data: { lastUsedAt: new Date() },
+            });
+          }
+
+          embedSuccess = true;
+        } catch (error: any) {
+          const status = error?.status || error?.response?.status;
+          const errMsg = error instanceof Error ? error.message : String(error);
+
+          log("warn", "chat.embed.attempt_failed", {
+            attempt: embedAttempt,
+            apiKeyId: embedKeyInfo.id,
+            status,
+            message: errMsg,
+          });
+
+          // Handle 429: mark key limited and retry with next key
+          if (status === 429 && embedKeyInfo.id !== -1) {
+            const reason = this.detectLimitReason(error);
+            await prisma.llmApiKey.update({
+              where: { id: embedKeyInfo.id },
+              data: {
+                status: "limited",
+                limitReason: reason,
+                limitedAt: new Date(),
+              },
+            });
+            continue; // Try next key
+          }
+
+          // Handle invalid key
+          if ((status === 401 || status === 403) && embedKeyInfo.id !== -1) {
+            await prisma.llmApiKey.update({
+              where: { id: embedKeyInfo.id },
+              data: {
+                status: "invalid",
+                invalidatedAt: new Date(),
+              },
+            });
+            continue;
+          }
+
+          // Other errors: stop retrying
+          break;
+        }
+      }
     }
 
     const fused = this.fuseByReciprocalRank(semanticResults, lexicalResults);
