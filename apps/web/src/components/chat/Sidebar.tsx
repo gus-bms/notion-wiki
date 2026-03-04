@@ -7,7 +7,7 @@ interface SidebarProps {
   sourceId: number;
   currentSessionId: number | null;
   onSelectSession: (sessionId: number | null) => void;
-  onDeleteSession: (sessionId: number) => void;
+  onDeleteSession: (sessionId: number) => Promise<void>;
   workspace: WorkspaceBootstrap | null;
   onOpenSettings: () => void;
 }
@@ -51,10 +51,15 @@ export function Sidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceId, currentSessionId]);
 
-  function handleDelete(e: React.MouseEvent, sessionId: number) {
+  async function handleDelete(e: React.MouseEvent, sessionId: number) {
     e.stopPropagation();
     if (!window.confirm("이 대화를 삭제하시겠습니까?")) return;
-    onDeleteSession(sessionId);
+    try {
+      await onDeleteSession(sessionId);
+      void loadSessions();
+    } catch (error) {
+      // Error is handled by App.tsx toast
+    }
   }
 
   return (
