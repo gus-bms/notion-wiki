@@ -456,10 +456,18 @@ export class ChatService {
   }
 
   async deleteSession(sessionId: number): Promise<{ deleted: boolean }> {
-    await prisma.chatSession.delete({
-      where: { id: sessionId },
-    });
-    return { deleted: true };
+    try {
+      await prisma.chatSession.delete({
+        where: { id: sessionId },
+      });
+      return { deleted: true };
+    } catch (error: any) {
+      if (error.code === "P2025") {
+        // Record doesn't exist anymore, which is fine for a delete operation
+        return { deleted: true };
+      }
+      throw error;
+    }
   }
 
   async getSessionDetails(sessionId: number) {
