@@ -248,3 +248,29 @@ model RetrievalLog {
   @@index([messageId], map: "idx_retrieval_message")
   @@index([createdAt], map: "idx_retrieval_created")
 }
+enum ApiKeyStatus {
+  active
+  limited
+  invalid
+}
+
+enum LimitReason {
+  rpm
+  rpd
+}
+
+model LlmApiKey {
+  id            Int           @id @default(autoincrement())
+  key           String        @unique
+  provider      String        @default("gemini")
+  status        ApiKeyStatus  @default(active)
+  limitReason   LimitReason?
+  lastUsedAt    DateTime?
+  limitedAt     DateTime?
+  invalidatedAt DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("llm_api_keys")
+  @@index([status], map: "idx_keys_status")
+}

@@ -1,7 +1,7 @@
 ﻿import { Injectable } from "@nestjs/common";
 import { chatRequestSchema, Citation } from "@notion-wiki/contracts";
 import { prisma } from "@notion-wiki/db";
-import { GeminiProvider, MockProvider } from "@notion-wiki/llm-provider";
+import { GeminiProvider } from "@notion-wiki/llm-provider";
 import { log } from "@notion-wiki/observability";
 import { parseChatResponse, DEFAULT_SYSTEM_PROMPT } from "@notion-wiki/prompts";
 import { toCitation, validateCitations } from "@notion-wiki/retrieval";
@@ -40,15 +40,77 @@ interface HybridRetrievalOutput {
 
 @Injectable()
 export class ChatService {
-  private readonly provider = process.env.GEMINI_API_KEY
-    ? new GeminiProvider(process.env.GEMINI_API_KEY)
-    : new MockProvider();
-
   private readonly qdrant = new QdrantClient({
     url: process.env.QDRANT_URL ?? "http://localhost:6333",
     apiKey: process.env.QDRANT_API_KEY,
     collection: process.env.QDRANT_COLLECTION ?? "notion_chunks",
   });
+
+  /**
+   * Lazy Recovery: before selecting a key, automatically reactivate keys
+   * whose cooldown has expired.
+   *   - RPM/TPM limit → recover after 60 seconds
+   *   - RPD limit     → recover after midnight (date change)
+   */
+  private async getActiveApiKey(): Promise<{ id: number; key: string } | null> {
+    const now = new Date();
+    const oneMinuteAgo = new Date(now.getTime() - 60_000);
+    const todayMidnight = new Date(now.toISOString().slice(0, 10)); // 00:00:00 UTC today
+
+    // Recover RPM/TPM-limited keys (1 min cooldown)
+    await prisma.llmApiKey.updateMany({
+      where: {
+        status: "limited",
+        limitReason: "rpm",
+        limitedAt: { lt: oneMinuteAgo },
+      },
+      data: { status: "active", limitReason: null, limitedAt: null },
+    });
+
+    // Recover RPD-limited keys (daily reset)
+    await prisma.llmApiKey.updateMany({
+      where: {
+        status: "limited",
+        limitReason: "rpd",
+        limitedAt: { lt: todayMidnight },
+      },
+      data: { status: "active", limitReason: null, limitedAt: null },
+    });
+
+    // Select the least-recently-used active key
+    const keys = await prisma.llmApiKey.findMany({
+      where: { status: "active" },
+      orderBy: { lastUsedAt: "asc" },
+    });
+
+    if (keys.length > 0) {
+      return keys[0];
+    }
+
+    // Fallback to .env if DB has no keys at all
+    const envKey = process.env.GEMINI_API_KEY;
+    if (envKey) {
+      return { id: -1, key: envKey };
+    }
+
+    return null;
+  }
+
+  /**
+   * Detect whether a 429 error is RPM/TPM (per-minute) or RPD (per-day).
+   * Gemini error messages typically contain "per minute" or "per day".
+   */
+  private detectLimitReason(error: any): "rpm" | "rpd" {
+    const msg = (
+      error?.message ||
+      error?.errorDetails?.[0]?.reason ||
+      ""
+    ).toLowerCase();
+    if (msg.includes("per day") || msg.includes("daily")) {
+      return "rpd";
+    }
+    return "rpm"; // Default to RPM (safer: 1 min recovery)
+  }
 
   async chat(input: unknown): Promise<{
     sessionId: number;
@@ -148,37 +210,102 @@ export class ChatService {
     let llmMs = 0;
 
     if (contexts.length > 0) {
-      const llmStartedAt = Date.now();
-      try {
-        const todayDate = new Date().toISOString().slice(0, 10);
-        const rawResponse = await this.provider.chat({
-          model: process.env.GEMINI_CHAT_MODEL ?? "gemini-2.5-flash",
-          outputFormat: "plain_text",
-          systemInstruction: `${DEFAULT_SYSTEM_PROMPT}\n\nToday's date: ${todayDate}`,
-          userMessage: parsed.message,
-          contexts,
-        });
-        llmMs = Date.now() - llmStartedAt;
+      const maxAttempts = 3;
+      let attempt = 0;
+      let success = false;
 
-        const parsedResponse = parseChatResponse(rawResponse.text);
-        answer = parsedResponse.answer || "Cannot verify";
+      while (attempt < maxAttempts && !success) {
+        attempt++;
+        const apiKeyInfo = await this.getActiveApiKey();
+
+        if (!apiKeyInfo) {
+          log("error", "chat.llm.no_keys_available");
+          answer =
+            "No LLM API keys available. Please check system configuration.";
+          break;
+        }
+
+        const currentProvider = new GeminiProvider(apiKeyInfo.key);
+        const llmStartedAt = Date.now();
 
         try {
-          citations = validateCitations(parsedResponse.citations);
-        } catch {
-          citations = [];
+          const todayDate = new Date().toISOString().slice(0, 10);
+          const rawResponse = await currentProvider.chat({
+            model: process.env.GEMINI_CHAT_MODEL ?? "gemini-1.5-flash",
+            outputFormat: "plain_text",
+            systemInstruction: `${DEFAULT_SYSTEM_PROMPT}\n\nToday's date: ${todayDate}`,
+            userMessage: parsed.message,
+            contexts,
+          });
+
+          llmMs += Date.now() - llmStartedAt;
+          const parsedResponse = parseChatResponse(rawResponse.text);
+          answer = parsedResponse.answer || "Cannot verify";
+
+          try {
+            citations = validateCitations(parsedResponse.citations);
+          } catch {
+            citations = [];
+          }
+
+          // Update lastUsedAt for the key
+          if (apiKeyInfo.id !== -1) {
+            await prisma.llmApiKey.update({
+              where: { id: apiKeyInfo.id },
+              data: { lastUsedAt: new Date() },
+            });
+          }
+
+          success = true;
+        } catch (error: any) {
+          const llmDuration = Date.now() - llmStartedAt;
+          llmMs += llmDuration;
+
+          const status = error?.status || error?.response?.status;
+          const message =
+            error instanceof Error ? error.message : String(error);
+
+          log("warn", `chat.llm.attempt_failed`, {
+            attempt,
+            apiKeyId: apiKeyInfo.id,
+            status,
+            message,
+          });
+
+          // Handle Rate Limit (429)
+          if (status === 429 && apiKeyInfo.id !== -1) {
+            const reason = this.detectLimitReason(error);
+            log("info", "chat.llm.key_rate_limited", {
+              apiKeyId: apiKeyInfo.id,
+              limitReason: reason,
+            });
+            await prisma.llmApiKey.update({
+              where: { id: apiKeyInfo.id },
+              data: {
+                status: "limited",
+                limitReason: reason,
+                limitedAt: new Date(),
+              },
+            });
+            continue; // Try with another key
+          }
+
+          // Handle Invalid Key (401/403)
+          if ((status === 401 || status === 403) && apiKeyInfo.id !== -1) {
+            await prisma.llmApiKey.update({
+              where: { id: apiKeyInfo.id },
+              data: {
+                status: "invalid",
+                invalidatedAt: new Date(),
+              },
+            });
+            continue;
+          }
+
+          // Other errors or fallback reached its end
+          answer = "LLM generation failed. Please try again later.";
+          break;
         }
-      } catch (error) {
-        llmMs = Date.now() - llmStartedAt;
-        const message =
-          error instanceof Error ? error.message : "LLM generation failed";
-        log("warn", "chat.llm.failed", {
-          sourceId: parsed.sourceId,
-          sessionId: activeSession.id,
-          message,
-        });
-        answer = "LLM generation failed. Review the citations below.";
-        citations = [toCitation(contexts[0])];
       }
     } else {
       answer = "Cannot verify: no relevant evidence found.";
@@ -668,7 +795,10 @@ export class ChatService {
 
     let semanticResults: RetrievalResult[] = [];
     try {
-      const embedResponse = await this.provider.embed({
+      const embedKeyInfo = await this.getActiveApiKey();
+      if (!embedKeyInfo) throw new Error("No active API key for embedding");
+      const embedProvider = new GeminiProvider(embedKeyInfo.key);
+      const embedResponse = await embedProvider.embed({
         texts: [message],
         model: process.env.GEMINI_EMBED_MODEL ?? "text-embedding-004",
         taskType: "retrieval_query",
