@@ -1,7 +1,13 @@
 import { FormEvent, useState, useRef, useEffect, KeyboardEvent } from "react";
 import { useToast } from "../ui/ToastProvider";
 import { apiFetch } from "../../lib/api";
-import { ChatThreadItem, ChatResult, Citation, SelectedCitation } from "../../lib/types";
+import {
+  ChatThreadItem,
+  ChatResult,
+  Citation,
+  SelectedCitation,
+} from "../../lib/types";
+import ReactMarkdown from "react-markdown";
 
 interface ChatPanelProps {
   sourceId: number;
@@ -16,7 +22,7 @@ export function ChatPanel({
   sessionId,
   chatHistory,
   onSessionChange,
-  onHistoryChange
+  onHistoryChange,
 }: ChatPanelProps): JSX.Element {
   const { pushToast } = useToast();
   const [question, setQuestion] = useState("");
@@ -43,7 +49,10 @@ export function ChatPanel({
     return () => window.removeEventListener("keydown", onGlobalKeyDown);
   }, []);
 
-  async function askQuestion(rawQuestion: string, fromShortcut = false): Promise<void> {
+  async function askQuestion(
+    rawQuestion: string,
+    fromShortcut = false,
+  ): Promise<void> {
     if (!sourceId) {
       if (fromShortcut) pushToast("warning", "Connect Notion first, then ask.");
       return;
@@ -62,26 +71,29 @@ export function ChatPanel({
       const payload = {
         sourceId,
         ...(sessionId ? { sessionId } : {}),
-        message: prompt
+        message: prompt,
       };
 
       const result = await apiFetch<ChatResult>("/chat", {
         method: "POST",
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const threadItem: ChatThreadItem = {
         localId: Date.now() + Math.floor(Math.random() * 1000),
         question: prompt,
         result,
-        askedAtIso: new Date().toISOString()
+        askedAtIso: new Date().toISOString(),
       };
 
       onSessionChange(result.sessionId);
       setQuestion("");
       onHistoryChange([...chatHistory, threadItem]);
     } catch (error) {
-      pushToast("error", error instanceof Error ? error.message : "Chat request failed");
+      pushToast(
+        "error",
+        error instanceof Error ? error.message : "Chat request failed",
+      );
     } finally {
       setLoadingChat(false);
       // Wait a tick and refocus the composer
@@ -96,7 +108,9 @@ export function ChatPanel({
     await askQuestion(question);
   }
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+  function handleComposerKeyDown(
+    event: KeyboardEvent<HTMLTextAreaElement>,
+  ): void {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void askQuestion(question);
@@ -105,7 +119,6 @@ export function ChatPanel({
 
   return (
     <section className="thread-panel">
-
       <div className="thread-list">
         {chatHistory.length === 0 && (
           <article className="empty-thread">
@@ -120,7 +133,11 @@ export function ChatPanel({
             <div className="bubble bubble-user">
               <div className="bubble-head">
                 <strong>You</strong>
-                <span>{new Date(item.askedAtIso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
+                <span>
+                  {new Date(item.askedAtIso).toLocaleString("ko-KR", {
+                    timeZone: "Asia/Seoul",
+                  })}
+                </span>
               </div>
               <p>{item.question}</p>
             </div>
@@ -129,14 +146,13 @@ export function ChatPanel({
               <div className="bubble-head" style={{ marginBottom: "0.4rem" }}>
                 <strong>Semantic Search Results</strong>
                 <span>
-                  retrieval: {item.result.meta.retrievalMs}ms, llm: {item.result.meta.llmMs}ms
+                  retrieval: {item.result.meta.retrievalMs}ms, llm:{" "}
+                  {item.result.meta.llmMs}ms
                 </span>
               </div>
               {item.result.answer && (
-                <div className="assistant-answer">
-                  {item.result.answer.split("\n").map((line, i) => (
-                    <p key={i}>{line}</p>
-                  ))}
+                <div className="markdown-body assistant-answer">
+                  <ReactMarkdown>{item.result.answer}</ReactMarkdown>
                 </div>
               )}
               {item.result.documents.length > 0 && (
@@ -149,7 +165,9 @@ export function ChatPanel({
                       rel="noreferrer"
                       className="doc-card"
                     >
-                      <span className="doc-card-title">{doc.title || "Untitled"}</span>
+                      <span className="doc-card-title">
+                        {doc.title || "Untitled"}
+                      </span>
                       {doc.lastEditedAt && (
                         <small className="doc-card-meta">
                           {new Date(doc.lastEditedAt).toLocaleDateString()}
@@ -180,8 +198,21 @@ export function ChatPanel({
             rows={2}
             placeholder="Ask from indexed Notion content..."
           />
-          <button type="submit" disabled={loadingChat || question.trim().length === 0} title="Send message">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button
+            type="submit"
+            disabled={loadingChat || question.trim().length === 0}
+            title="Send message"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="22" y1="2" x2="11" y2="13"></line>
               <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
