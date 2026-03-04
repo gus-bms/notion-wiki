@@ -111,39 +111,38 @@ function AppShell(): JSX.Element {
     setSessionId(newSessionId);
     try {
       const detail = await apiFetch<ChatSessionDetailOutput>(`/chat/sessions/${newSessionId}`);
-      // Re-map messages to ChatThreadItem shape
-      const mappedHistory: ChatThreadItem[] = detail.messages
-        .filter((m) => m.role === "user")
-        .map((m) => {
-          // Find the corresponding assistant answer
-          // Our simple history assumes pairs, but DB stores them.
-          const answerMsg = detail.messages.find(
-            (am) => am.role === "assistant" && am.createdAt > m.createdAt
-          );
-          
-          return {
-            localId: String(m.id),
-            question: m.messageText,
-            askedAtIso: m.createdAt,
-            result: answerMsg ? {
-              sessionId: newSessionId,
-              answer: answerMsg.answerText ?? "",
-              citations: answerMsg.citations ?? [],
-              documents: answerMsg.documents ?? [],
-              meta: answerMsg.meta ?? {
-                topK: 8,
-                retrievalMs: 0,
-                llmMs: 0
-              }
-            } : {
-              sessionId: newSessionId,
-              answer: "No response recorded.",
-              citations: [],
-              documents: [],
-              meta: { topK: 0, retrievalMs: 0, llmMs: 0 }
+      // Messages are sorted by createdAt asc from server.
+      // Pair each user message with the immediately following assistant message.
+      const mappedHistory: ChatThreadItem[] = [];
+      const msgs = detail.messages;
+      for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[i];
+        if (m.role !== "user") continue;
+        const next = i + 1 < msgs.length ? msgs[i + 1] : null;
+        const assistant = next?.role === "assistant" ? next : null;
+        mappedHistory.push({
+          localId: String(m.id),
+          question: m.messageText,
+          askedAtIso: m.createdAt,
+          result: assistant ? {
+            sessionId: newSessionId,
+            answer: assistant.answerText ?? "",
+            citations: assistant.citations ?? [],
+            documents: assistant.documents ?? [],
+            meta: assistant.meta ?? {
+              topK: 8,
+              retrievalMs: 0,
+              llmMs: 0
             }
-          };
+          } : {
+            sessionId: newSessionId,
+            answer: "No response recorded.",
+            citations: [],
+            documents: [],
+            meta: { topK: 0, retrievalMs: 0, llmMs: 0 }
+          }
         });
+      }
 
       setChatHistory(mappedHistory);
     } catch (error) {

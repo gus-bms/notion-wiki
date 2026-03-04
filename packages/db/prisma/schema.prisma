@@ -207,6 +207,7 @@ model ChatMessage {
   messageText   String         @db.LongText
   answerText    String?        @db.LongText
   citationsJson Json?
+  documentsJson Json?
   metaJson      Json?
   createdAt     DateTime       @default(now())
   session       ChatSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)

@@ -166,6 +166,32 @@ export class ChatService {
       citations = [toCitation(contexts[0])];
     }
 
+    const seenDocumentIds = new Set<number>();
+    for (const r of retrievalResults) {
+      seenDocumentIds.add(r.payload.documentId);
+    }
+
+    const freshDocuments = await prisma.document.findMany({
+      where: { id: { in: Array.from(seenDocumentIds) } },
+      select: { id: true, title: true, url: true, lastEditedAt: true }
+    });
+
+    const freshMap = new Map(freshDocuments.map((d) => [d.id, d]));
+    const documentMap = new Map<number, ChatDocument>();
+    for (const r of retrievalResults) {
+      const docId = r.payload.documentId;
+      if (!documentMap.has(docId)) {
+        const fresh = freshMap.get(docId);
+        documentMap.set(docId, {
+          documentId: docId,
+          title: fresh?.title ?? r.payload.title,
+          url: fresh?.url ?? r.payload.url,
+          lastEditedAt: fresh?.lastEditedAt?.toISOString() ?? r.payload.lastEditedAt ?? null
+        });
+      }
+    }
+    const documents = Array.from(documentMap.values());
+
     const assistantMessage = await prisma.chatMessage.create({
       data: {
         sessionId: activeSession.id,
@@ -173,6 +199,7 @@ export class ChatService {
         messageText: parsed.message,
         answerText: answer,
         citationsJson: citations,
+        documentsJson: JSON.parse(JSON.stringify(documents)),
         metaJson: { topK, retrievalMs, llmMs }
       }
     });
@@ -206,32 +233,6 @@ export class ChatService {
       semanticCandidateCount,
       lexicalCandidateCount
     });
-
-    const seenDocumentIds = new Set<number>();
-    for (const r of retrievalResults) {
-      seenDocumentIds.add(r.payload.documentId);
-    }
-
-    const freshDocuments = await prisma.document.findMany({
-      where: { id: { in: Array.from(seenDocumentIds) } },
-      select: { id: true, title: true, url: true, lastEditedAt: true }
-    });
-
-    const freshMap = new Map(freshDocuments.map((d) => [d.id, d]));
-    const documentMap = new Map<number, ChatDocument>();
-    for (const r of retrievalResults) {
-      const docId = r.payload.documentId;
-      if (!documentMap.has(docId)) {
-        const fresh = freshMap.get(docId);
-        documentMap.set(docId, {
-          documentId: docId,
-          title: fresh?.title ?? r.payload.title,
-          url: fresh?.url ?? r.payload.url,
-          lastEditedAt: fresh?.lastEditedAt?.toISOString() ?? r.payload.lastEditedAt ?? null
-        });
-      }
-    }
-    const documents = Array.from(documentMap.values());
 
     return {
       sessionId: activeSession.id,
@@ -283,6 +284,9 @@ export class ChatService {
       createdAt: session.createdAt.toISOString(),
       messages: session.messages.map((m) => {
         const citations = m.citationsJson ? (m.citationsJson as unknown as Citation[]) : undefined;
+        const documents = m.documentsJson
+          ? (m.documentsJson as unknown as ChatDocument[])
+          : [];
         const meta = m.metaJson
           ? (m.metaJson as { topK: number; retrievalMs: number; llmMs: number })
           : undefined;
@@ -293,7 +297,7 @@ export class ChatService {
           messageText: m.messageText,
           answerText: m.answerText,
           citations,
-          documents: [], // We don't historically persist documents specifically, UI will adapt
+          documents,
           meta,
           createdAt: m.createdAt.toISOString()
         };
