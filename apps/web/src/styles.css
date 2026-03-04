@@ -502,6 +502,22 @@ button:disabled {
   box-shadow: 0 0 0 1px #0389f4 inset;
 }
 
+.assistant-answer {
+  margin-top: 0.2rem;
+  margin-bottom: 0.4rem;
+}
+
+.assistant-answer p {
+  font-size: 0.96rem;
+  line-height: 1.7;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.assistant-answer p:empty {
+  display: none;
+}
+
 .doc-grid {
   margin-top: 0.6rem;
   display: grid;

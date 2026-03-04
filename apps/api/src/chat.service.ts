@@ -47,7 +47,7 @@ export class ChatService {
   private readonly qdrant = new QdrantClient({
     url: process.env.QDRANT_URL ?? "http://localhost:6333",
     apiKey: process.env.QDRANT_API_KEY,
-    collection: process.env.QDRANT_COLLECTION ?? "notion_chunks"
+    collection: process.env.QDRANT_COLLECTION ?? "notion_chunks",
   });
 
   async chat(input: unknown): Promise<{
@@ -62,21 +62,25 @@ export class ChatService {
 
     const session =
       parsed.sessionId !== undefined
-        ? await prisma.chatSession.findUnique({ where: { id: parsed.sessionId } })
-        : await prisma.chatSession.create({ data: { sourceId: parsed.sourceId } });
+        ? await prisma.chatSession.findUnique({
+            where: { id: parsed.sessionId },
+          })
+        : await prisma.chatSession.create({
+            data: { sourceId: parsed.sourceId },
+          });
 
     const activeSession =
       session ??
       (await prisma.chatSession.create({
-        data: { sourceId: parsed.sourceId }
+        data: { sourceId: parsed.sourceId },
       }));
 
     await prisma.chatMessage.create({
       data: {
         sessionId: activeSession.id,
         role: "user",
-        messageText: parsed.message
-      }
+        messageText: parsed.message,
+      },
     });
 
     const retrievalStartedAt = Date.now();
@@ -91,15 +95,28 @@ export class ChatService {
     let partialLexicalUsed = false;
 
     if (lexicalCandidate) {
-      retrievalResults = await this.findLexicalMatches(parsed.sourceId, lexicalCandidate, topK);
+      retrievalResults = await this.findLexicalMatches(
+        parsed.sourceId,
+        lexicalCandidate,
+        topK,
+      );
       if (retrievalResults.length === 0 && exactLookupRequested) {
-        retrievalResults = await this.findPartialLexicalMatches(parsed.sourceId, lexicalCandidate, topK);
+        retrievalResults = await this.findPartialLexicalMatches(
+          parsed.sourceId,
+          lexicalCandidate,
+          topK,
+        );
         partialLexicalUsed = retrievalResults.length > 0;
       }
     }
 
     if (retrievalResults.length < topK) {
-      const hybrid = await this.retrieveHybridResults(parsed.sourceId, parsed.message, topK, temporalRange);
+      const hybrid = await this.retrieveHybridResults(
+        parsed.sourceId,
+        parsed.message,
+        topK,
+        temporalRange,
+      );
       const existingIds = new Set(retrievalResults.map((r) => r.id));
       for (const res of hybrid.results) {
         if (!existingIds.has(res.id)) {
@@ -107,7 +124,11 @@ export class ChatService {
         }
       }
       // Re-apply diversity limit just in case combining them exceeded it locally
-      retrievalResults = this.applyDocumentDiversityLimit(retrievalResults, topK, 2);
+      retrievalResults = this.applyDocumentDiversityLimit(
+        retrievalResults,
+        topK,
+        2,
+      );
       semanticCandidateCount = hybrid.semanticCount;
       lexicalCandidateCount = hybrid.lexicalCount;
       hybridEnabled = true;
@@ -119,7 +140,7 @@ export class ChatService {
       chunkId: result.payload.chunkId ?? String(result.id),
       title: result.payload.title,
       url: result.payload.url,
-      text: result.payload.text
+      text: result.payload.text,
     }));
 
     let answer = "Cannot verify";
@@ -135,7 +156,7 @@ export class ChatService {
           outputFormat: "plain_text",
           systemInstruction: `${DEFAULT_SYSTEM_PROMPT}\n\nToday's date: ${todayDate}`,
           userMessage: parsed.message,
-          contexts
+          contexts,
         });
         llmMs = Date.now() - llmStartedAt;
 
@@ -149,11 +170,12 @@ export class ChatService {
         }
       } catch (error) {
         llmMs = Date.now() - llmStartedAt;
-        const message = error instanceof Error ? error.message : "LLM generation failed";
+        const message =
+          error instanceof Error ? error.message : "LLM generation failed";
         log("warn", "chat.llm.failed", {
           sourceId: parsed.sourceId,
           sessionId: activeSession.id,
-          message
+          message,
         });
         answer = "LLM generation failed. Review the citations below.";
         citations = [toCitation(contexts[0])];
@@ -162,35 +184,62 @@ export class ChatService {
       answer = "Cannot verify: no relevant evidence found.";
     }
 
-    if (contexts.length > 0 && citations.length === 0) {
-      citations = [toCitation(contexts[0])];
-    }
+    // Priority 1: Filter documents by actual LLM citations
+    const citedUrls = new Set(citations.map((c) => c.url));
 
-    const seenDocumentIds = new Set<number>();
-    for (const r of retrievalResults) {
-      seenDocumentIds.add(r.payload.documentId);
-    }
+    // Priority 2: Fallback to top retrieved documents if answer is substantive but citations are missing
+    const isSubstantiveAnswer =
+      answer !== "Cannot verify" &&
+      answer !== "Cannot verify: no relevant evidence found." &&
+      !answer.startsWith("확인 불가");
 
-    const freshDocuments = await prisma.document.findMany({
-      where: { id: { in: Array.from(seenDocumentIds) } },
-      select: { id: true, title: true, url: true, lastEditedAt: true }
-    });
+    let documents: ChatDocument[] = [];
 
-    const freshMap = new Map(freshDocuments.map((d) => [d.id, d]));
-    const documentMap = new Map<number, ChatDocument>();
-    for (const r of retrievalResults) {
-      const docId = r.payload.documentId;
-      if (!documentMap.has(docId)) {
-        const fresh = freshMap.get(docId);
-        documentMap.set(docId, {
-          documentId: docId,
-          title: fresh?.title ?? r.payload.title,
-          url: fresh?.url ?? r.payload.url,
-          lastEditedAt: fresh?.lastEditedAt?.toISOString() ?? r.payload.lastEditedAt ?? null
+    if (citedUrls.size > 0 || isSubstantiveAnswer) {
+      const seenDocumentIds = new Set<number>();
+
+      if (citedUrls.size > 0) {
+        // Strict filtering by citations
+        for (const r of retrievalResults) {
+          if (citedUrls.has(r.payload.url)) {
+            seenDocumentIds.add(r.payload.documentId);
+          }
+        }
+      } else {
+        // Fallback: Show only top 3 to reduce noise
+        for (const r of retrievalResults.slice(0, 3)) {
+          seenDocumentIds.add(r.payload.documentId);
+        }
+      }
+
+      if (seenDocumentIds.size > 0) {
+        const freshDocuments = await prisma.document.findMany({
+          where: { id: { in: Array.from(seenDocumentIds) } },
+          select: { id: true, title: true, url: true, lastEditedAt: true },
         });
+
+        const freshMap = new Map(freshDocuments.map((d) => [d.id, d]));
+        const documentMap = new Map<number, ChatDocument>();
+
+        // Re-iterate retrievalResults to preserve the metadata from payload if fresh lookup fails
+        for (const r of retrievalResults) {
+          const docId = r.payload.documentId;
+          if (!seenDocumentIds.has(docId) || documentMap.has(docId)) continue;
+
+          const fresh = freshMap.get(docId);
+          documentMap.set(docId, {
+            documentId: docId,
+            title: fresh?.title ?? r.payload.title,
+            url: fresh?.url ?? r.payload.url,
+            lastEditedAt:
+              fresh?.lastEditedAt?.toISOString() ??
+              r.payload.lastEditedAt ??
+              null,
+          });
+        }
+        documents = Array.from(documentMap.values());
       }
     }
-    const documents = Array.from(documentMap.values());
 
     const assistantMessage = await prisma.chatMessage.create({
       data: {
@@ -200,8 +249,8 @@ export class ChatService {
         answerText: answer,
         citationsJson: citations,
         documentsJson: JSON.parse(JSON.stringify(documents)),
-        metaJson: { topK, retrievalMs, llmMs }
-      }
+        metaJson: { topK, retrievalMs, llmMs },
+      },
     });
 
     await prisma.retrievalLog.create({
@@ -211,11 +260,14 @@ export class ChatService {
         topK,
         chunkIdsJson: retrievalResults.map((item) => String(item.id)),
         scoresJson: retrievalResults.map((item) => item.score),
-        contextTokensEst: contexts.reduce((acc, cur) => acc + Math.ceil(cur.text.length / 4), 0),
+        contextTokensEst: contexts.reduce(
+          (acc, cur) => acc + Math.ceil(cur.text.length / 4),
+          0,
+        ),
         retrievalMs,
         llmMs,
-        cacheHit: false
-      }
+        cacheHit: false,
+      },
     });
 
     log("info", "chat.completed", {
@@ -226,12 +278,14 @@ export class ChatService {
       llmMs,
       citationCount: citations.length,
       lexicalCandidate: lexicalCandidate ?? null,
-      usedLexical: exactLookupRequested ? retrievalResults.length > 0 : lexicalCandidateCount > 0,
+      usedLexical: exactLookupRequested
+        ? retrievalResults.length > 0
+        : lexicalCandidateCount > 0,
       exactLookupRequested,
       partialLexicalUsed,
       hybridEnabled,
       semanticCandidateCount,
-      lexicalCandidateCount
+      lexicalCandidateCount,
     });
 
     return {
@@ -239,7 +293,7 @@ export class ChatService {
       answer,
       citations,
       documents,
-      meta: { topK, retrievalMs, llmMs }
+      meta: { topK, retrievalMs, llmMs },
     };
   }
 
@@ -250,18 +304,18 @@ export class ChatService {
         messages: {
           where: { role: "user" },
           orderBy: { createdAt: "asc" },
-          take: 1
-        }
+          take: 1,
+        },
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
     });
 
     return {
       sessions: sessions.map((s) => ({
         id: s.id,
         title: s.messages[0]?.messageText.slice(0, 40) ?? "New Chat",
-        createdAt: s.createdAt.toISOString()
-      }))
+        createdAt: s.createdAt.toISOString(),
+      })),
     };
   }
 
@@ -270,9 +324,9 @@ export class ChatService {
       where: { id: sessionId },
       include: {
         messages: {
-          orderBy: { createdAt: "asc" }
-        }
-      }
+          orderBy: { createdAt: "asc" },
+        },
+      },
     });
 
     if (!session) {
@@ -283,7 +337,9 @@ export class ChatService {
       id: session.id,
       createdAt: session.createdAt.toISOString(),
       messages: session.messages.map((m) => {
-        const citations = m.citationsJson ? (m.citationsJson as unknown as Citation[]) : undefined;
+        const citations = m.citationsJson
+          ? (m.citationsJson as unknown as Citation[])
+          : undefined;
         const documents = m.documentsJson
           ? (m.documentsJson as unknown as ChatDocument[])
           : [];
@@ -299,9 +355,9 @@ export class ChatService {
           citations,
           documents,
           meta,
-          createdAt: m.createdAt.toISOString()
+          createdAt: m.createdAt.toISOString(),
         };
-      })
+      }),
     };
   }
 
@@ -326,7 +382,9 @@ export class ChatService {
     return null;
   }
 
-  private detectTemporalRange(message: string): { dateFrom: string; dateTo: string } | null {
+  private detectTemporalRange(
+    message: string,
+  ): { dateFrom: string; dateTo: string } | null {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -337,13 +395,19 @@ export class ChatService {
     };
 
     if (/오늘/.test(message)) {
-      return { dateFrom: today.toISOString(), dateTo: endOfDay(today).toISOString() };
+      return {
+        dateFrom: today.toISOString(),
+        dateTo: endOfDay(today).toISOString(),
+      };
     }
 
     if (/어제/.test(message)) {
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
-      return { dateFrom: yesterday.toISOString(), dateTo: endOfDay(yesterday).toISOString() };
+      return {
+        dateFrom: yesterday.toISOString(),
+        dateTo: endOfDay(yesterday).toISOString(),
+      };
     }
 
     if (/이번\s*주/.test(message)) {
@@ -351,7 +415,10 @@ export class ChatService {
       const dayOfWeek = today.getDay();
       const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
       startOfWeek.setDate(today.getDate() - daysToMonday);
-      return { dateFrom: startOfWeek.toISOString(), dateTo: endOfDay(today).toISOString() };
+      return {
+        dateFrom: startOfWeek.toISOString(),
+        dateTo: endOfDay(today).toISOString(),
+      };
     }
 
     if (/지난\s*주/.test(message)) {
@@ -363,44 +430,67 @@ export class ChatService {
       startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
       const endOfLastWeek = new Date(startOfThisWeek);
       endOfLastWeek.setDate(startOfThisWeek.getDate() - 1);
-      return { dateFrom: startOfLastWeek.toISOString(), dateTo: endOfDay(endOfLastWeek).toISOString() };
+      return {
+        dateFrom: startOfLastWeek.toISOString(),
+        dateTo: endOfDay(endOfLastWeek).toISOString(),
+      };
     }
 
     if (/이번\s*달/.test(message)) {
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      return { dateFrom: startOfMonth.toISOString(), dateTo: endOfDay(today).toISOString() };
+      return {
+        dateFrom: startOfMonth.toISOString(),
+        dateTo: endOfDay(today).toISOString(),
+      };
     }
 
     if (/지난\s*달/.test(message)) {
-      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const startOfLastMonth = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1,
+      );
       const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-      return { dateFrom: startOfLastMonth.toISOString(), dateTo: endOfDay(endOfLastMonth).toISOString() };
+      return {
+        dateFrom: startOfLastMonth.toISOString(),
+        dateTo: endOfDay(endOfLastMonth).toISOString(),
+      };
     }
 
     if (/올해/.test(message)) {
       const startOfYear = new Date(today.getFullYear(), 0, 1);
-      return { dateFrom: startOfYear.toISOString(), dateTo: endOfDay(today).toISOString() };
+      return {
+        dateFrom: startOfYear.toISOString(),
+        dateTo: endOfDay(today).toISOString(),
+      };
     }
 
     if (/최근/.test(message)) {
       const thirtyDaysAgo = new Date(today);
       thirtyDaysAgo.setDate(today.getDate() - 30);
-      return { dateFrom: thirtyDaysAgo.toISOString(), dateTo: endOfDay(today).toISOString() };
+      return {
+        dateFrom: thirtyDaysAgo.toISOString(),
+        dateTo: endOfDay(today).toISOString(),
+      };
     }
 
     return null;
   }
 
-  private async findLexicalMatches(sourceId: number, query: string, limit: number): Promise<RetrievalResult[]> {
+  private async findLexicalMatches(
+    sourceId: number,
+    query: string,
+    limit: number,
+  ): Promise<RetrievalResult[]> {
     const chunks = await prisma.documentChunk.findMany({
       where: {
         chunkText: {
-          contains: query
+          contains: query,
         },
         document: {
           sourceId,
-          status: "active"
-        }
+          status: "active",
+        },
       },
       include: {
         document: {
@@ -410,14 +500,14 @@ export class ChatService {
             notionPageId: true,
             title: true,
             url: true,
-            status: true
-          }
-        }
+            status: true,
+          },
+        },
       },
       orderBy: {
-        id: "desc"
+        id: "desc",
       },
-      take: limit
+      take: limit,
     });
 
     return chunks.map((chunk, index) => ({
@@ -432,8 +522,8 @@ export class ChatService {
         title: chunk.document.title,
         url: chunk.document.url,
         text: chunk.chunkText,
-        status: chunk.document.status === "active" ? "active" : "deleted"
-      }
+        status: chunk.document.status === "active" ? "active" : "deleted",
+      },
     }));
   }
 
@@ -441,7 +531,7 @@ export class ChatService {
     sourceId: number,
     query: string,
     limit: number,
-    temporalRange?: { dateFrom: string; dateTo: string }
+    temporalRange?: { dateFrom: string; dateTo: string },
   ): Promise<RetrievalResult[]> {
     const tokens = this.extractSearchTokens(query);
     if (tokens.length === 0) {
@@ -449,7 +539,12 @@ export class ChatService {
     }
 
     const dateFilter = temporalRange
-      ? { lastEditedAt: { gte: new Date(temporalRange.dateFrom), lte: new Date(temporalRange.dateTo) } }
+      ? {
+          lastEditedAt: {
+            gte: new Date(temporalRange.dateFrom),
+            lte: new Date(temporalRange.dateTo),
+          },
+        }
       : {};
 
     const candidates = await prisma.documentChunk.findMany({
@@ -457,13 +552,13 @@ export class ChatService {
         document: {
           sourceId,
           status: "active",
-          ...dateFilter
+          ...dateFilter,
         },
         OR: tokens.map((token) => ({
           chunkText: {
-            contains: token
-          }
-        }))
+            contains: token,
+          },
+        })),
       },
       include: {
         document: {
@@ -473,19 +568,23 @@ export class ChatService {
             notionPageId: true,
             title: true,
             url: true,
-            status: true
-          }
-        }
+            status: true,
+          },
+        },
       },
       orderBy: {
-        id: "desc"
+        id: "desc",
       },
-      take: 100
+      take: 100,
     });
 
     const scored = candidates
       .map((chunk) => {
-        const hitCount = tokens.reduce((count, token) => (chunk.chunkText.includes(token) ? count + 1 : count), 0);
+        const hitCount = tokens.reduce(
+          (count, token) =>
+            chunk.chunkText.includes(token) ? count + 1 : count,
+          0,
+        );
         return { chunk, hitCount };
       })
       .filter((item) => item.hitCount > 0)
@@ -509,8 +608,8 @@ export class ChatService {
         title: item.chunk.document.title,
         url: item.chunk.document.url,
         text: item.chunk.chunkText,
-        status: item.chunk.document.status === "active" ? "active" : "deleted"
-      }
+        status: item.chunk.document.status === "active" ? "active" : "deleted",
+      },
     }));
   }
 
@@ -529,13 +628,22 @@ export class ChatService {
     sourceId: number,
     message: string,
     topK: number,
-    temporalRange?: { dateFrom: string; dateTo: string }
+    temporalRange?: { dateFrom: string; dateTo: string },
   ): Promise<HybridRetrievalOutput> {
-    const result = await this.executeHybridRetrieval(sourceId, message, topK, temporalRange);
+    const result = await this.executeHybridRetrieval(
+      sourceId,
+      message,
+      topK,
+      temporalRange,
+    );
 
     // Fallback: if temporal filter returned nothing, retry without date restriction.
     if (temporalRange && result.results.length === 0) {
-      log("info", "chat.hybrid.temporal_fallback", { sourceId, dateFrom: temporalRange.dateFrom, dateTo: temporalRange.dateTo });
+      log("info", "chat.hybrid.temporal_fallback", {
+        sourceId,
+        dateFrom: temporalRange.dateFrom,
+        dateTo: temporalRange.dateTo,
+      });
       return this.executeHybridRetrieval(sourceId, message, topK, undefined);
     }
 
@@ -546,19 +654,24 @@ export class ChatService {
     sourceId: number,
     message: string,
     topK: number,
-    temporalRange?: { dateFrom: string; dateTo: string }
+    temporalRange?: { dateFrom: string; dateTo: string },
   ): Promise<HybridRetrievalOutput> {
     const semanticLimit = Math.max(topK * 4, 24);
     const lexicalLimit = Math.max(topK * 6, 48);
 
-    const lexicalResults = await this.findPartialLexicalMatches(sourceId, message, lexicalLimit, temporalRange);
+    const lexicalResults = await this.findPartialLexicalMatches(
+      sourceId,
+      message,
+      lexicalLimit,
+      temporalRange,
+    );
 
     let semanticResults: RetrievalResult[] = [];
     try {
       const embedResponse = await this.provider.embed({
         texts: [message],
         model: process.env.GEMINI_EMBED_MODEL ?? "text-embedding-004",
-        taskType: "retrieval_query"
+        taskType: "retrieval_query",
       });
 
       semanticResults = (await this.searchWithCollectionRecovery({
@@ -568,13 +681,16 @@ export class ChatService {
         status: "active",
         embeddingDimension: embedResponse.dimensions,
         dateFrom: temporalRange?.dateFrom,
-        dateTo: temporalRange?.dateTo
+        dateTo: temporalRange?.dateTo,
       })) as RetrievalResult[];
     } catch (error) {
-      const messageText = error instanceof Error ? error.message : "Hybrid semantic retrieval failed";
+      const messageText =
+        error instanceof Error
+          ? error.message
+          : "Hybrid semantic retrieval failed";
       log("warn", "chat.hybrid.semantic_failed", {
         sourceId,
-        message: messageText
+        message: messageText,
       });
     }
 
@@ -584,11 +700,14 @@ export class ChatService {
     return {
       results: diversified,
       semanticCount: semanticResults.length,
-      lexicalCount: lexicalResults.length
+      lexicalCount: lexicalResults.length,
     };
   }
 
-  private fuseByReciprocalRank(semanticResults: RetrievalResult[], lexicalResults: RetrievalResult[]): RetrievalResult[] {
+  private fuseByReciprocalRank(
+    semanticResults: RetrievalResult[],
+    lexicalResults: RetrievalResult[],
+  ): RetrievalResult[] {
     const rrfK = 60;
     const scoreByKey = new Map<
       string,
@@ -608,7 +727,7 @@ export class ChatService {
       }
       scoreByKey.set(key, {
         score: addedScore,
-        result
+        result,
       });
     });
 
@@ -625,7 +744,7 @@ export class ChatService {
       }
       scoreByKey.set(key, {
         score: addedScore,
-        result
+        result,
       });
     });
 
@@ -639,7 +758,11 @@ export class ChatService {
       .map((item) => item.result);
   }
 
-  private applyDocumentDiversityLimit(results: RetrievalResult[], limit: number, perDocumentCap: number): RetrievalResult[] {
+  private applyDocumentDiversityLimit(
+    results: RetrievalResult[],
+    limit: number,
+    perDocumentCap: number,
+  ): RetrievalResult[] {
     if (results.length <= limit) {
       return results;
     }
@@ -721,10 +844,11 @@ export class ChatService {
         sourceId: params.sourceId,
         status: params.status,
         dateFrom: params.dateFrom,
-        dateTo: params.dateTo
+        dateTo: params.dateTo,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Qdrant search failed";
+      const message =
+        error instanceof Error ? error.message : "Qdrant search failed";
       const collectionMissing =
         message.includes("Qdrant request failed (404)") &&
         message.includes("doesn't exist");
@@ -735,7 +859,7 @@ export class ChatService {
 
       log("warn", "chat.qdrant.collection_missing", {
         sourceId: params.sourceId,
-        message
+        message,
       });
 
       await this.qdrant.ensureCollection(params.embeddingDimension);

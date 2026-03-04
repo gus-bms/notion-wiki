@@ -132,6 +132,13 @@ export function ChatPanel({
                   retrieval: {item.result.meta.retrievalMs}ms, llm: {item.result.meta.llmMs}ms
                 </span>
               </div>
+              {item.result.answer && (
+                <div className="assistant-answer">
+                  {item.result.answer.split("\n").map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
+              )}
               {item.result.documents.length > 0 && (
                 <div className="doc-grid">
                   {item.result.documents.map((doc) => (
