@@ -6,7 +6,7 @@ import {
   ChatThreadItem,
   SelectedCitation,
   Citation,
-  IngestPageFailure
+  IngestPageFailure,
 } from "./lib/types";
 import { WorkspaceSettings } from "./components/WorkspaceSettings";
 import { ChatPanel } from "./components/chat/ChatPanel";
@@ -30,19 +30,26 @@ function AppShell(): JSX.Element {
   const hasSource = workspace?.hasSource === true && source !== null;
 
   const unresolvedFailureCount = useMemo(
-    () => pageFailures.filter((failure) => failure.status !== "resolved").length,
-    [pageFailures]
+    () =>
+      pageFailures.filter((failure) => failure.status !== "resolved").length,
+    [pageFailures],
   );
 
-  async function loadPageFailures(targetSourceId: number, includeResolved = false): Promise<void> {
+  async function loadPageFailures(
+    targetSourceId: number,
+    includeResolved = false,
+  ): Promise<void> {
     setLoadingPageFailures(true);
     try {
       const result = await apiFetch<{ failures: IngestPageFailure[] }>(
-        `/ingest/page-failures?sourceId=${targetSourceId}&includeResolved=${includeResolved ? "1" : "0"}`
+        `/ingest/page-failures?sourceId=${targetSourceId}&includeResolved=${includeResolved ? "1" : "0"}`,
       );
       setPageFailures(result.failures);
     } catch (error) {
-      pushToast("error", error instanceof Error ? error.message : "Failed to load page failures");
+      pushToast(
+        "error",
+        error instanceof Error ? error.message : "Failed to load page failures",
+      );
       setPageFailures([]);
     } finally {
       setLoadingPageFailures(false);
@@ -64,12 +71,15 @@ function AppShell(): JSX.Element {
       setWorkspace(result);
     } catch (error) {
       if (!silentError) {
-        pushToast("error", error instanceof Error ? error.message : "Workspace bootstrap failed");
+        pushToast(
+          "error",
+          error instanceof Error ? error.message : "Workspace bootstrap failed",
+        );
       }
       setWorkspace({
         hasSource: false,
         source: null,
-        latestIngestJob: null
+        latestIngestJob: null,
       });
     } finally {
       setBootstrapping(false);
@@ -102,15 +112,19 @@ function AppShell(): JSX.Element {
     pushToast("info", "Started a new chat session.");
   }
 
-  async function handleSessionSelect(newSessionId: number | null): Promise<void> {
+  async function handleSessionSelect(
+    newSessionId: number | null,
+  ): Promise<void> {
     if (newSessionId === null) {
       startNewSession();
       return;
     }
-    
+
     setSessionId(newSessionId);
     try {
-      const detail = await apiFetch<ChatSessionDetailOutput>(`/chat/sessions/${newSessionId}`);
+      const detail = await apiFetch<ChatSessionDetailOutput>(
+        `/chat/sessions/${newSessionId}`,
+      );
       // Messages are sorted by createdAt asc from server.
       // Pair each user message with the immediately following assistant message.
       const mappedHistory: ChatThreadItem[] = [];
@@ -124,29 +138,51 @@ function AppShell(): JSX.Element {
           localId: String(m.id),
           question: m.messageText,
           askedAtIso: m.createdAt,
-          result: assistant ? {
-            sessionId: newSessionId,
-            answer: assistant.answerText ?? "",
-            citations: assistant.citations ?? [],
-            documents: assistant.documents ?? [],
-            meta: assistant.meta ?? {
-              topK: 8,
-              retrievalMs: 0,
-              llmMs: 0
-            }
-          } : {
-            sessionId: newSessionId,
-            answer: "No response recorded.",
-            citations: [],
-            documents: [],
-            meta: { topK: 0, retrievalMs: 0, llmMs: 0 }
-          }
+          result: assistant
+            ? {
+                sessionId: newSessionId,
+                answer: assistant.answerText ?? "",
+                citations: assistant.citations ?? [],
+                documents: assistant.documents ?? [],
+                meta: assistant.meta ?? {
+                  topK: 8,
+                  retrievalMs: 0,
+                  llmMs: 0,
+                },
+              }
+            : {
+                sessionId: newSessionId,
+                answer: "No response recorded.",
+                citations: [],
+                documents: [],
+                meta: { topK: 0, retrievalMs: 0, llmMs: 0 },
+              },
         });
       }
 
       setChatHistory(mappedHistory);
     } catch (error) {
       pushToast("error", "Failed to load session details.");
+    }
+  }
+
+  async function handleSessionDelete(targetSessionId: number): Promise<void> {
+    try {
+      await apiFetch<{ deleted: boolean }>(
+        `/chat/sessions/${targetSessionId}`,
+        {
+          method: "DELETE",
+        },
+      );
+      pushToast("info", "대화가 삭제되었습니다.");
+      if (sessionId === targetSessionId) {
+        startNewSession();
+      }
+    } catch (error) {
+      pushToast(
+        "error",
+        error instanceof Error ? error.message : "삭제에 실패했습니다.",
+      );
     }
   }
 
@@ -168,67 +204,97 @@ function AppShell(): JSX.Element {
           sourceId={source.sourceId}
           currentSessionId={sessionId}
           onSelectSession={handleSessionSelect}
+          onDeleteSession={handleSessionDelete}
           workspace={workspace}
           onOpenSettings={() => setShowSettings(true)}
         />
       )}
-      
+
       <div className="app-shell">
-      {!hasSource && (
-        <section className="auth-shell">
-          <div className="auth-card">
-            <WorkspaceSettings
-              bootstrapping={bootstrapping}
-              workspace={workspace}
-              hasSource={hasSource}
-              sourceId={sourceId}
-              onBootstrapComplete={loadBootstrap}
-              withHeading={true}
-              pageFailures={pageFailures}
-              loadingPageFailures={loadingPageFailures}
-              onReloadFailures={(includeResolved) => sourceId && loadPageFailures(sourceId, includeResolved)}
-            />
-          </div>
-         </section>
-      )}
-
-      {hasSource && source && (
-        <>
-          <main className="chat-layout">
-            <ChatPanel
-              sourceId={source.sourceId}
-              sessionId={sessionId}
-              chatHistory={chatHistory}
-              onSessionChange={setSessionId}
-              onHistoryChange={setChatHistory}
-            />
-          </main>
-        </>
-      )}
-
-      {showSettings && hasSource && (
-        <div className="settings-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}>
-          <section className="settings-modal">
-            <div className="settings-head">
-              <h2>Settings</h2>
-              <button type="button" className="stab-close-btn" onClick={() => setShowSettings(false)} aria-label="Close settings">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
+        {!hasSource && (
+          <section className="auth-shell">
+            <div className="auth-card">
+              <WorkspaceSettings
+                bootstrapping={bootstrapping}
+                workspace={workspace}
+                hasSource={hasSource}
+                sourceId={sourceId}
+                onBootstrapComplete={loadBootstrap}
+                withHeading={true}
+                pageFailures={pageFailures}
+                loadingPageFailures={loadingPageFailures}
+                onReloadFailures={(includeResolved) =>
+                  sourceId && loadPageFailures(sourceId, includeResolved)
+                }
+              />
             </div>
-            <WorkspaceSettings
-              bootstrapping={bootstrapping}
-              workspace={workspace}
-              hasSource={hasSource}
-              sourceId={sourceId}
-              onBootstrapComplete={loadBootstrap}
-              onClose={() => setShowSettings(false)}
-              pageFailures={pageFailures}
-              loadingPageFailures={loadingPageFailures}
-              onReloadFailures={(includeResolved) => sourceId && loadPageFailures(sourceId, includeResolved)}
-            />
           </section>
-        </div>
-      )}
+        )}
+
+        {hasSource && source && (
+          <>
+            <main className="chat-layout">
+              <ChatPanel
+                sourceId={source.sourceId}
+                sessionId={sessionId}
+                chatHistory={chatHistory}
+                onSessionChange={setSessionId}
+                onHistoryChange={setChatHistory}
+              />
+            </main>
+          </>
+        )}
+
+        {showSettings && hasSource && (
+          <div
+            className="settings-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowSettings(false);
+            }}
+          >
+            <section className="settings-modal">
+              <div className="settings-head">
+                <h2>Settings</h2>
+                <button
+                  type="button"
+                  className="stab-close-btn"
+                  onClick={() => setShowSettings(false)}
+                  aria-label="Close settings"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <WorkspaceSettings
+                bootstrapping={bootstrapping}
+                workspace={workspace}
+                hasSource={hasSource}
+                sourceId={sourceId}
+                onBootstrapComplete={loadBootstrap}
+                onClose={() => setShowSettings(false)}
+                pageFailures={pageFailures}
+                loadingPageFailures={loadingPageFailures}
+                onReloadFailures={(includeResolved) =>
+                  sourceId && loadPageFailures(sourceId, includeResolved)
+                }
+              />
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

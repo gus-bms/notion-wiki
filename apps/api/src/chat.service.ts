@@ -455,6 +455,13 @@ export class ChatService {
     };
   }
 
+  async deleteSession(sessionId: number): Promise<{ deleted: boolean }> {
+    await prisma.chatSession.delete({
+      where: { id: sessionId },
+    });
+    return { deleted: true };
+  }
+
   async getSessionDetails(sessionId: number) {
     const session = await prisma.chatSession.findUnique({
       where: { id: sessionId },

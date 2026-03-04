@@ -1718,6 +1718,39 @@ a:focus-visible {
   margin-top: 0.25rem;
 }
 
+.session-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.session-delete-btn {
+  background: transparent;
+  border: none;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: #8a96a8;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+  box-shadow: none;
+  display: grid;
+  place-items: center;
+}
+
+.session-item:hover .session-delete-btn {
+  opacity: 1;
+}
+
+.session-delete-btn:hover {
+  background: rgba(196, 70, 70, 0.1);
+  color: var(--danger);
+  transform: none;
+  box-shadow: none;
+}
+
 /* =========================================
    Sidebar: Branding & Footer Additions
    ========================================= */
